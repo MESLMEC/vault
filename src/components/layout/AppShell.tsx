@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   Clock,
   ShieldCheck,
+  LayoutDashboard,
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { Tenure, ReconciliationStatus, AllocationContext } from '../../lib/db/types';
@@ -82,6 +83,7 @@ export const AppShell: React.FC<AppShellProps> = ({
   };
 
   const navItems = [
+    { id: 'dashboard', label: 'Financial Overview', icon: LayoutDashboard, desc: 'Summary, Metrics & Charts' },
     { id: 'ledger', label: 'Money & Ledger', icon: Coins, desc: 'Envelopes & Cash Flow' },
     { id: 'dues', label: 'Fees & Members', icon: Users, desc: 'Weekly Dues & Arrears' },
     { id: 'allocation', label: 'Allocation Session', icon: Scale, desc: 'Divide General Pool' },

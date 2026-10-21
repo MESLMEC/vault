@@ -12,6 +12,7 @@ import {
   Moon,
   Sun,
   X,
+  LayoutDashboard,
 } from 'lucide-react';
 
 interface CommandPaletteProps {
@@ -80,6 +81,13 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     {
       category: 'Navigate to Views',
       items: [
+        {
+          id: 'nav-dashboard',
+          label: 'Financial Overview',
+          desc: 'Key metrics, charts, cash velocity & envelope distribution',
+          icon: LayoutDashboard,
+          run: () => onNavigate('dashboard'),
+        },
         {
           id: 'nav-ledger',
           label: 'Money & Ledger',

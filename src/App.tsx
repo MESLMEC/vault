@@ -10,6 +10,7 @@ import { CostCentersScreen } from './components/events/CostCentersScreen';
 import { AssetsScreen } from './components/assets/AssetsScreen';
 import { ReconciliationScreen } from './components/reconciliation/ReconciliationScreen';
 import { HandoverScreen } from './components/handover/HandoverScreen';
+import { FinanceDashboard } from './components/dashboard/FinanceDashboard';
 import { RefusalModal } from './components/common/RefusalModal';
 import { api } from './services/api';
 import {
@@ -19,10 +20,13 @@ import {
   Member,
   Envelope,
   CostCenter,
+  CostCenterSummary,
+  ReconciliationStatus,
+  AllocationContext,
 } from './lib/db/types';
 
 export const App: React.FC = () => {
-  const [currentView, setCurrentView] = useState('ledger');
+  const [currentView, setCurrentView] = useState('dashboard');
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   // Core data states
@@ -31,6 +35,9 @@ export const App: React.FC = () => {
   const [standing, setStanding] = useState<MemberStanding[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
+  const [costCenterSummaries, setCostCenterSummaries] = useState<CostCenterSummary[]>([]);
+  const [recStatus, setRecStatus] = useState<ReconciliationStatus | null>(null);
+  const [allocContext, setAllocContext] = useState<AllocationContext | null>(null);
 
   // Refusal Modal State
   const [refusalState, setRefusalState] = useState<{
@@ -67,18 +74,24 @@ export const App: React.FC = () => {
 
   const loadData = async () => {
     try {
-      const [envs, txs, st, mems, ccs] = await Promise.all([
+      const [envs, txs, st, mems, ccs, ccSums, rec, ctx] = await Promise.all([
         api.getEnvelopeBalances(),
         api.getEntriesCurrent(),
         api.getDuesOverview(),
         api.getMembers(),
         api.getCostCenters(),
+        api.getCostCenterSummary(),
+        api.getReconciliationStatus(),
+        api.getAllocationContext(),
       ]);
       setEnvelopes(envs);
       setEntries(txs);
       setStanding(st);
       setMembers(mems);
       setCostCenters(ccs);
+      setCostCenterSummaries(ccSums);
+      setRecStatus(rec);
+      setAllocContext(ctx);
     } catch (err) {
       console.error(err);
     }
@@ -128,6 +141,20 @@ export const App: React.FC = () => {
         onSuccess={triggerRefresh}
         onError={handleError}
       />
+
+      {/* VIEW 0: Financial Dashboard Section */}
+      {currentView === 'dashboard' && (
+        <FinanceDashboard
+          envelopes={envelopes}
+          entries={entries}
+          standing={standing}
+          costCenters={costCenterSummaries}
+          recStatus={recStatus}
+          allocContext={allocContext}
+          onNavigate={setCurrentView}
+          onQuickRecord={handleQuickRecord}
+        />
+      )}
 
       {/* VIEW 1: Money & Ledger */}
       {currentView === 'ledger' && (
