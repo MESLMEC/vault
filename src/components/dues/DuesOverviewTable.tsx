@@ -10,12 +10,16 @@ import {
   CheckCircle,
   HelpCircle,
   UserCheck,
+  TrendingUp,
+  Edit2,
 } from 'lucide-react';
 import { MemberStanding, Member } from '../../lib/db/types';
 import { formatTaka, formatDate } from '../../lib/utils';
 import { QuickFeeCollectorModal } from './QuickFeeCollectorModal';
 import { WaiverModal } from './WaiverModal';
 import { ShutdownCalendarModal } from './ShutdownCalendarModal';
+import { FeeRatesModal } from './FeeRatesModal';
+import { EditMemberModal } from './EditMemberModal';
 import { api } from '../../services/api';
 
 interface DuesOverviewTableProps {
@@ -41,6 +45,8 @@ export const DuesOverviewTable: React.FC<DuesOverviewTableProps> = ({
   const [waiverMember, setWaiverMember] = useState<Member | null>(null);
   const [shutdownOpen, setShutdownOpen] = useState(false);
   const [showAddMember, setShowAddMember] = useState(false);
+  const [feeRatesOpen, setFeeRatesOpen] = useState(false);
+  const [editMember, setEditMember] = useState<Member | null>(null);
 
   // New member form states
   const [newMemberName, setNewMemberName] = useState('');
@@ -97,6 +103,18 @@ export const DuesOverviewTable: React.FC<DuesOverviewTableProps> = ({
         onSuccess={onRefresh}
         onError={onError}
       />
+      <FeeRatesModal
+        isOpen={feeRatesOpen}
+        onClose={() => setFeeRatesOpen(false)}
+        onSuccess={onRefresh}
+        onError={onError}
+      />
+      <EditMemberModal
+        member={editMember}
+        onClose={() => setEditMember(null)}
+        onSuccess={onRefresh}
+        onError={onError}
+      />
 
       {/* Top Header Summary */}
       <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
@@ -111,6 +129,14 @@ export const DuesOverviewTable: React.FC<DuesOverviewTableProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={() => setFeeRatesOpen(true)}
+            className="flex items-center gap-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors shadow-sm"
+          >
+            <TrendingUp className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span>Fee Rates</span>
+          </button>
+
           <button
             onClick={() => setShutdownOpen(true)}
             className="flex items-center gap-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors shadow-sm"
@@ -350,6 +376,13 @@ export const DuesOverviewTable: React.FC<DuesOverviewTableProps> = ({
                             className="rounded p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800"
                           >
                             <ShieldAlert className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setEditMember(m ?? null)}
+                            title="Edit member details & periods"
+                            className="rounded p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
                           </button>
                         </div>
                       </td>

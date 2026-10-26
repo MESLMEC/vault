@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   X,
   Layers,
+  Edit2,
 } from 'lucide-react';
 import { CostCenterSummary, CostCenter, EnvelopeBalance } from '../../lib/db/types';
 import { api } from '../../services/api';
@@ -36,6 +37,11 @@ export const CostCentersScreen: React.FC<CostCentersScreenProps> = ({
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newName, setNewName] = useState('');
   const [newKind, setNewKind] = useState<CostCenter['kind']>('event');
+
+  // Edit / Rename Modal State
+  const [editCC, setEditCC] = useState<CostCenterSummary | null>(null);
+  const [editCCName, setEditCCName] = useState('');
+  const [editCCStatus, setEditCCStatus] = useState<CostCenter['status']>('active');
 
   const loadData = async () => {
     try {
@@ -86,6 +92,24 @@ export const CostCentersScreen: React.FC<CostCentersScreenProps> = ({
       await api.createCostCenter(newName, newKind);
       setNewName('');
       setShowCreateModal(false);
+      await loadData();
+      onRefresh();
+    } catch (err) {
+      onError(err);
+    }
+  };
+
+  const handleEditCC = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editCC) return;
+    try {
+      if (editCCName.trim() && editCCName.trim() !== editCC.name) {
+        await api.renameCostCenter(editCC.cost_center_id, editCCName.trim());
+      }
+      if (editCCStatus !== editCC.status) {
+        await api.updateCostCenterStatus(editCC.cost_center_id, editCCStatus);
+      }
+      setEditCC(null);
       await loadData();
       onRefresh();
     } catch (err) {
@@ -145,9 +169,22 @@ export const CostCentersScreen: React.FC<CostCentersScreenProps> = ({
                 >
                   {cc.kind.replace('_', ' ')}
                 </span>
-                <span className="rounded bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-500 capitalize">
-                  {cc.status}
-                </span>
+                <div className="flex items-center gap-1">
+                  <span className="rounded bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-500 capitalize">
+                    {cc.status}
+                  </span>
+                  <button
+                    onClick={() => {
+                      setEditCC(cc);
+                      setEditCCName(cc.name);
+                      setEditCCStatus(cc.status);
+                    }}
+                    className="rounded p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                    title="Rename or change status"
+                  >
+                    <Edit2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </div>
 
               <h3 className="font-semibold text-base text-zinc-900 dark:text-zinc-100 mt-2">
@@ -363,6 +400,77 @@ export const CostCentersScreen: React.FC<CostCentersScreenProps> = ({
                   className="rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200"
                 >
                   Create Cost Center
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Edit Cost Center Modal */}
+      {editCC && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-100">
+          <div className="w-full max-w-md rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Edit2 className="h-4 w-4 text-zinc-700 dark:text-zinc-300" />
+                <h3 className="font-semibold text-base text-zinc-900 dark:text-zinc-100">
+                  Edit Cost Center
+                </h3>
+              </div>
+              <button
+                onClick={() => setEditCC(null)}
+                className="text-zinc-400 hover:text-zinc-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleEditCC} className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                  Cost Center Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editCCName}
+                  onChange={(e) => setEditCCName(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 outline-none focus:border-zinc-400"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                  Lifecycle Status
+                </label>
+                <select
+                  value={editCCStatus}
+                  onChange={(e) => setEditCCStatus(e.target.value as any)}
+                  className="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 outline-none focus:border-zinc-400"
+                >
+                  <option value="planned">Planned (Upcoming)</option>
+                  <option value="active">Active (Ongoing)</option>
+                  <option value="completed">Completed (Finished)</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+                <p className="text-[10px] text-zinc-400 mt-1">
+                  Active cost centers accept expenses and member fee sponsorships.
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => setEditCC(null)}
+                  className="rounded-lg border border-zinc-200 dark:border-zinc-800 px-4 py-2 text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200"
+                >
+                  Save Changes
                 </button>
               </div>
             </form>

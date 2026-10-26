@@ -24,6 +24,7 @@ import { api } from '../../services/api';
 import { Tenure, ReconciliationStatus, AllocationContext } from '../../lib/db/types';
 import { formatTaka } from '../../lib/utils';
 import { CommandPalette } from './CommandPalette';
+import { AuthModal } from '../common/AuthModal';
 
 interface AppShellProps {
   currentView: string;
@@ -44,6 +45,7 @@ export const AppShell: React.FC<AppShellProps> = ({
 }) => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [cmdOpen, setCmdOpen] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
   const [isDark, setIsDark] = useState(() => {
     return document.documentElement.classList.contains('dark');
   });
@@ -51,9 +53,18 @@ export const AppShell: React.FC<AppShellProps> = ({
   const [openTenure, setOpenTenure] = useState<Tenure | null>(null);
   const [recStatus, setRecStatus] = useState<ReconciliationStatus | null>(null);
   const [allocContext, setAllocContext] = useState<AllocationContext | null>(null);
+  const [backendOnline, setBackendOnline] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(api.auth.isAuthenticated());
 
   useEffect(() => {
     const loadHeaderStats = async () => {
+      try {
+        const health = await api.auth.checkBackendHealth();
+        setBackendOnline(health.online);
+        setIsAuthenticated(api.auth.isAuthenticated());
+      } catch {
+        setBackendOnline(false);
+      }
       try {
         const tenure = await api.getOpenTenure();
         setOpenTenure(tenure);
@@ -136,6 +147,13 @@ export const AppShell: React.FC<AppShellProps> = ({
         onQuickRecord={onQuickRecord}
         isDark={isDark}
         onToggleTheme={toggleTheme}
+      />
+
+      {/* Backend Auth & Mode Modal */}
+      <AuthModal
+        isOpen={authOpen}
+        onClose={() => setAuthOpen(false)}
+        onAuthChange={onDataChanged}
       />
 
       {/* Sidebar */}
@@ -354,6 +372,17 @@ export const AppShell: React.FC<AppShellProps> = ({
             >
               <Users className="h-3.5 w-3.5" />
               <span>Collect Fees</span>
+            </button>
+
+            <button
+              onClick={() => setAuthOpen(true)}
+              className="flex items-center gap-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/60 px-2.5 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors shadow-sm"
+              title="Click to manage backend connection and authentication"
+            >
+              <ShieldCheck className={`h-3.5 w-3.5 ${isAuthenticated ? 'text-emerald-500' : backendOnline ? 'text-blue-500' : 'text-zinc-400'}`} />
+              <span className="hidden sm:inline">
+                {isAuthenticated ? 'API: Live (Auth)' : backendOnline ? 'API: Live (Guest)' : 'Local Engine'}
+              </span>
             </button>
 
             <button

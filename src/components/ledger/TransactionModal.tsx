@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, ArrowDownRight, ArrowUpRight, ArrowRightLeft, Sparkles, AlertCircle } from 'lucide-react';
+import { X, ArrowDownRight, ArrowUpRight, ArrowRightLeft, RotateCcw, Sparkles, AlertCircle } from 'lucide-react';
 import { api } from '../../services/api';
 import { Envelope, CostCenter, Member, IncomeSource, EntryKind } from '../../lib/db/types';
 import { formatTaka } from '../../lib/utils';
@@ -7,7 +7,7 @@ import { formatTaka } from '../../lib/utils';
 interface TransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialType?: 'deposit' | 'expense' | 'transfer' | 'sweep';
+  initialType?: 'deposit' | 'expense' | 'transfer' | 'refund' | 'sweep';
   onTransactionSaved: () => void;
   onError: (err: any) => void;
 }
@@ -19,7 +19,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   onTransactionSaved,
   onError,
 }) => {
-  const [kind, setKind] = useState<'deposit' | 'expense' | 'transfer' | 'sweep'>(initialType);
+  const [kind, setKind] = useState<'deposit' | 'expense' | 'transfer' | 'refund' | 'sweep'>(initialType);
   const [envelopes, setEnvelopes] = useState<Envelope[]>([]);
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
@@ -132,6 +132,20 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             { envelope_id: toId, amount: amt },
           ],
         });
+      } else if (kind === 'refund') {
+        if (!memId) {
+          alert('Please select the member receiving this refund.');
+          return;
+        }
+        await api.recordRefund({
+          amount: amt,
+          occurred_on: date,
+          member_id: memId,
+          cost_center_id: ccId,
+          tag: tag.trim() || null,
+          note: note.trim() || `Refund to member #${memId}`,
+          recorded_by: recordedBy,
+        });
       }
 
       onTransactionSaved();
@@ -195,6 +209,18 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
           >
             <ArrowRightLeft className="h-3.5 w-3.5 text-blue-500" />
             <span>Transfer</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setKind('refund')}
+            className={`flex-1 py-1.5 rounded-md flex items-center justify-center gap-1.5 transition-all ${
+              kind === 'refund'
+                ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-sm'
+                : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'
+            }`}
+          >
+            <RotateCcw className="h-3.5 w-3.5 text-amber-500" />
+            <span>Refund</span>
           </button>
         </div>
 
@@ -287,6 +313,33 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                     </div>
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* Refund Specific Section */}
+          {kind === 'refund' && (
+            <div className="space-y-3 rounded-lg bg-amber-50/50 dark:bg-amber-950/20 p-3.5 border border-amber-200/60 dark:border-amber-800/40">
+              <div>
+                <label className="block text-xs font-semibold text-amber-900 dark:text-amber-200">
+                  Recipient Member
+                </label>
+                <select
+                  required
+                  value={memberId}
+                  onChange={(e) => setMemberId(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800 px-2.5 py-2 text-xs text-zinc-900 dark:text-zinc-100 outline-none"
+                >
+                  <option value="">Select Member...</option>
+                  {members.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} ({m.batch ? `Batch ${m.batch}` : 'Member'})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1.5">
+                  Refunds pay out from the General Pool directly to return excess fee credit to the member.
+                </p>
               </div>
             </div>
           )}
