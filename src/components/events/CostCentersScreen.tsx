@@ -14,6 +14,7 @@ import {
 import { CostCenterSummary, CostCenter, EnvelopeBalance } from '../../lib/db/types';
 import { api } from '../../services/api';
 import { formatTaka } from '../../lib/utils';
+import { useConfirmation } from '../../context/ConfirmationContext';
 
 interface CostCentersScreenProps {
   onRefresh: () => void;
@@ -24,6 +25,7 @@ export const CostCentersScreen: React.FC<CostCentersScreenProps> = ({
   onRefresh,
   onError,
 }) => {
+  const { notify } = useConfirmation();
   const [summaries, setSummaries] = useState<CostCenterSummary[]>([]);
   const [envelopes, setEnvelopes] = useState<EnvelopeBalance[]>([]);
 
@@ -77,7 +79,11 @@ export const CostCentersScreen: React.FC<CostCentersScreenProps> = ({
         date: sweepDate,
         note: sweepNote.trim() || `Sweep leftover for ${sweepTarget.name}`,
       });
-      alert(`Successfully swept ৳${sweepTarget.leftover.toLocaleString()} back into the General Pool.`);
+      notify({
+        title: 'Leftover Swept',
+        description: `Successfully swept ৳${sweepTarget.leftover.toLocaleString()} back into the General Pool.`,
+        variant: 'success',
+      });
       setSweepTarget(null);
       await loadData();
       onRefresh();

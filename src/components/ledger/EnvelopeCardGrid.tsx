@@ -3,6 +3,7 @@ import { EnvelopeBalance } from '../../lib/db/types';
 import { formatTaka } from '../../lib/utils';
 import { Layers, Plus, Sparkles, AlertCircle, Settings2, Trash2 } from 'lucide-react';
 import { api } from '../../services/api';
+import { useConfirmation } from '../../context/ConfirmationContext';
 
 interface EnvelopeCardGridProps {
   envelopes: EnvelopeBalance[];
@@ -15,6 +16,7 @@ export const EnvelopeCardGrid: React.FC<EnvelopeCardGridProps> = ({
   onEnvelopeCreated,
   onError,
 }) => {
+  const { confirm } = useConfirmation();
   const [showAddModal, setShowAddModal] = useState(false);
   const [name, setName] = useState('');
   const [targetCap, setTargetCap] = useState<string>('');
@@ -72,17 +74,27 @@ export const EnvelopeCardGrid: React.FC<EnvelopeCardGridProps> = ({
   const handleDeactivate = async () => {
     if (!editEnv) return;
     if (editEnv.balance > 0) {
-      alert('Cannot deactivate envelope with positive balance. Transfer funds first.');
+      onError({
+        reason: 'Envelope has positive balance',
+        remediation: `Cannot deactivate "${editEnv.name}" while it holds ৳${editEnv.balance.toLocaleString()}. Transfer remaining funds to another envelope or pool first.`,
+      });
       return;
     }
-    if (confirm(`Deactivate envelope "${editEnv.name}"? It will no longer receive allocations or transfers.`)) {
-      try {
-        await api.deactivateEnvelope(editEnv.id);
-        setEditEnv(null);
-        onEnvelopeCreated();
-      } catch (err) {
-        onError(err);
-      }
+
+    const ok = await confirm({
+      title: 'Deactivate Virtual Envelope',
+      description: `Deactivate envelope "${editEnv.name}"? It will no longer receive allocations, sweeps, or transfers.`,
+      confirmLabel: 'Deactivate',
+      variant: 'danger',
+    });
+    if (!ok) return;
+
+    try {
+      await api.deactivateEnvelope(editEnv.id);
+      setEditEnv(null);
+      onEnvelopeCreated();
+    } catch (err) {
+      onError(err);
     }
   };
 

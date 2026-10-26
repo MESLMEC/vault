@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, TrendingUp, Plus, Calendar, Clock, CheckCircle } from 'lucide-react';
+import { TrendingUp, Plus, Calendar, Clock, CheckCircle, AlertTriangle } from 'lucide-react';
 import { api } from '../../services/api';
 import { FeeRate } from '../../lib/db/types';
-import { formatTaka } from '../../lib/utils';
+import { formatTaka, sundayOnOrBefore, toLocalDateStr } from '../../lib/utils';
+import { SettleModal } from '../ui/SettleModal';
 
 interface FeeRatesModalProps {
   isOpen: boolean;
@@ -19,10 +20,11 @@ export const FeeRatesModal: React.FC<FeeRatesModalProps> = ({
 }) => {
   const [rates, setRates] = useState<FeeRate[]>([]);
   const [effectiveFrom, setEffectiveFrom] = useState(
-    new Date().toISOString().split('T')[0]
+    sundayOnOrBefore(toLocalDateStr(new Date()))
   );
   const [amount, setAmount] = useState('50');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<{ reason: string; remediation?: string } | null>(null);
 
   const loadRates = async () => {
     try {
@@ -36,6 +38,8 @@ export const FeeRatesModal: React.FC<FeeRatesModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
+      setError(null);
+      setEffectiveFrom(sundayOnOrBefore(toLocalDateStr(new Date())));
       loadRates();
     }
   }, [isOpen]);
@@ -46,16 +50,24 @@ export const FeeRatesModal: React.FC<FeeRatesModalProps> = ({
     e.preventDefault();
     const amt = parseInt(amount, 10);
     if (isNaN(amt) || amt < 0) {
-      alert('Please enter a valid positive weekly rate amount.');
+      setError({
+        reason: 'Invalid Weekly Fee Rate',
+        remediation: 'Please enter a valid positive weekly rate amount in whole Taka.',
+      });
       return;
     }
     setLoading(true);
+    setError(null);
     try {
       await api.addFeeRate(effectiveFrom, amt, 'Treasurer');
       setAmount('50');
       await loadRates();
       onSuccess();
-    } catch (err) {
+    } catch (err: any) {
+      setError({
+        reason: err?.reason || err?.message || 'Failed to update fee rate.',
+        remediation: err?.remediation,
+      });
       onError(err);
     } finally {
       setLoading(false);
@@ -63,22 +75,17 @@ export const FeeRatesModal: React.FC<FeeRatesModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-100">
-      <div className="w-full max-w-lg rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-2xl space-y-5">
-        <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3">
-          <div className="flex items-center gap-2">
-            <TrendingUp className="h-5 w-5 text-zinc-900 dark:text-zinc-100" />
-            <h3 className="font-semibold text-base text-zinc-900 dark:text-zinc-100">
-              Weekly Fee Rates Schedule
-            </h3>
-          </div>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-600 dark:hover:text-zinc-200"
-          >
-            <X className="h-5 w-5" />
-          </button>
+    <SettleModal
+      open={isOpen}
+      onClose={onClose}
+      size="lg"
+      title={
+        <div className="flex items-center gap-2">
+          <TrendingUp className="h-5 w-5 text-zinc-900 dark:text-zinc-100" />
+          <span>Weekly Fee Rates Schedule</span>
         </div>
+      }
+    >
 
         {/* Existing Rates History */}
         <div className="space-y-2">
@@ -113,6 +120,22 @@ export const FeeRatesModal: React.FC<FeeRatesModalProps> = ({
             )}
           </div>
         </div>
+
+        {/* Error / Refusal Banner */}
+        {error && (
+          <div className="rounded-lg bg-amber-50 dark:bg-amber-950/40 p-3.5 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 space-y-1 animate-in fade-in">
+            <div className="flex items-center gap-2 font-semibold text-xs text-amber-800 dark:text-amber-300">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+              <span>Action Refused</span>
+            </div>
+            <p className="text-xs leading-relaxed">{error.reason}</p>
+            {error.remediation && (
+              <p className="text-[11px] text-amber-700 dark:text-amber-400 pt-1 border-t border-amber-200/50 dark:border-amber-800/50">
+                <strong>How to proceed: </strong>{error.remediation}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Form: Add Rate */}
         <form onSubmit={handleAddRate} className="rounded-lg bg-zinc-50 dark:bg-zinc-950 p-4 border border-zinc-200 dark:border-zinc-800 space-y-3">
@@ -159,16 +182,15 @@ export const FeeRatesModal: React.FC<FeeRatesModalProps> = ({
           </button>
         </form>
 
-        <div className="flex justify-end pt-2 border-t border-zinc-100 dark:border-zinc-800">
+        <div className="flex justify-end pt-3 mt-4 border-t border-zinc-100 dark:border-zinc-800">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            className="rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
           >
             Done
           </button>
         </div>
-      </div>
-    </div>
+    </SettleModal>
   );
 };

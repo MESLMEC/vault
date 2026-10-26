@@ -1,5 +1,5 @@
-import { FinanceEngine } from '../lib/db/engine';
-import { getSeedData } from '../lib/db/seed';
+import { FinanceEngine, STORAGE_KEY } from '../lib/db/engine';
+import { getCleanInitialData, getSeedData } from '../lib/db/seed';
 import {
   Tenure,
   Envelope,
@@ -42,19 +42,20 @@ import {
   StandingOut,
 } from './backendApi';
 
-// Initialize singleton engine
-const STORAGE_KEY = 'mesl_lab_finance_v1';
+// Initialize singleton engine with demo transactions so charts and analytics are live
 let engineInstance: FinanceEngine | null = null;
 
 export function getEngine(): FinanceEngine {
   if (!engineInstance) {
-    // Check if storage exists
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
     if (!stored) {
       engineInstance = new FinanceEngine(getSeedData());
       engineInstance.saveToStorage();
     } else {
       engineInstance = new FinanceEngine();
+      if (engineInstance.getRawState().ledger_transactions.length === 0) {
+        engineInstance.loadRawState(getSeedData());
+      }
     }
   }
   return engineInstance;
@@ -71,7 +72,30 @@ export const api = {
   // -----------------------------------------------------------------------------------
   auth: {
     async login(credentials: LoginRequest): Promise<TokenResponse> {
-      return await backendApi.login(credentials);
+      try {
+        return await backendApi.login(credentials);
+      } catch (err: any) {
+        // If the backend is unreachable and mode is auto/engine, provide local session fallback
+        const isOffline = err?.reason?.includes('unreachable') || err?.message?.includes('Cannot connect');
+        const mode = authStorage.getMode();
+        if ((mode === 'engine' || (mode === 'auto' && isOffline)) && credentials.username) {
+          if (credentials.password === 'change-me' || credentials.password.length >= 6) {
+            const mockToken: TokenResponse = {
+              access_token: `local_session_${Date.now()}`,
+              token_type: 'bearer',
+              expires_at: new Date(Date.now() + 72 * 3600 * 1000).toISOString(),
+            };
+            authStorage.setToken(mockToken.access_token);
+            authStorage.setUsername(credentials.username);
+            return mockToken;
+          } else {
+            const credErr: any = new Error('Invalid credentials.');
+            credErr.reason = 'Invalid credentials for local session (default: change-me)';
+            throw credErr;
+          }
+        }
+        throw err;
+      }
     },
     logout(): void {
       backendApi.logout();
@@ -935,8 +959,20 @@ export const api = {
     }
   },
 
+  resetToClean(): void {
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem('mesl_lab_finance_v1');
+      } catch {}
+    }
+    getEngine().loadRawState(getCleanInitialData());
+    getEngine().saveToStorage();
+  },
+
   resetToSeed(): void {
     getEngine().loadRawState(getSeedData());
+    getEngine().saveToStorage();
   },
 
   exportAdminReplacementCsv(): void {

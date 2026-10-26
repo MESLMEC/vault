@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, Calendar, AlertTriangle, Plus } from 'lucide-react';
+import { Calendar, AlertTriangle, Plus } from 'lucide-react';
 import { ShutdownEvent } from '../../lib/db/types';
 import { api } from '../../services/api';
 import { sundayOnOrBefore, formatDate } from '../../lib/utils';
+import { SettleModal } from '../ui/SettleModal';
 
 interface ShutdownCalendarModalProps {
   isOpen: boolean;
@@ -23,6 +24,7 @@ export const ShutdownCalendarModal: React.FC<ShutdownCalendarModalProps> = ({
   const [isShutdown, setIsShutdown] = useState(true);
   const [reason, setReason] = useState('');
   const [recordedBy, setRecordedBy] = useState('Treasurer');
+  const [error, setError] = useState<{ reason: string; remediation?: string } | null>(null);
 
   const loadEvents = async () => {
     try {
@@ -34,13 +36,17 @@ export const ShutdownCalendarModal: React.FC<ShutdownCalendarModalProps> = ({
   };
 
   useEffect(() => {
-    if (isOpen) loadEvents();
+    if (isOpen) {
+      setError(null);
+      loadEvents();
+    }
   }, [isOpen]);
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     try {
       await api.setShutdown({
         fromWeek,
@@ -52,32 +58,47 @@ export const ShutdownCalendarModal: React.FC<ShutdownCalendarModalProps> = ({
       setReason('');
       await loadEvents();
       onSuccess();
-    } catch (err) {
+    } catch (err: any) {
+      setError({
+        reason: err?.reason || err?.message || 'Failed to update shutdown weeks.',
+        remediation: err?.remediation,
+      });
       onError(err);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-100">
-      <div className="w-full max-w-lg rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-2xl">
-        <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3">
-          <div className="flex items-center gap-2">
-            <Calendar className="h-4 w-4 text-zinc-500" />
-            <h3 className="font-semibold text-base text-zinc-900 dark:text-zinc-100">
-              Lab Shutdown & Holiday Weeks (৳0 Weeks)
-            </h3>
-          </div>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-700 dark:hover:text-zinc-300"
-          >
-            <X className="h-5 w-5" />
-          </button>
+    <SettleModal
+      open={isOpen}
+      onClose={onClose}
+      size="lg"
+      title={
+        <div className="flex items-center gap-2">
+          <Calendar className="h-4 w-4 text-zinc-500" />
+          <span>Lab Shutdown & Holiday Weeks (৳0 Weeks)</span>
         </div>
+      }
+    >
 
         <p className="mt-2 text-xs text-zinc-500">
           Weeks when the electronics lab is closed cost ৳0 for all members. Member standing calculations automatically skip these weeks.
         </p>
+
+        {/* Error / Refusal Alert */}
+        {error && (
+          <div className="mt-3 rounded-lg bg-amber-50 dark:bg-amber-950/40 p-3.5 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 space-y-1 animate-in fade-in">
+            <div className="flex items-center gap-2 font-semibold text-xs text-amber-800 dark:text-amber-300">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+              <span>Action Refused</span>
+            </div>
+            <p className="text-xs leading-relaxed">{error.reason}</p>
+            {error.remediation && (
+              <p className="text-[11px] text-amber-700 dark:text-amber-400 pt-1 border-t border-amber-200/50 dark:border-amber-800/50">
+                <strong>How to proceed: </strong>{error.remediation}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Form to mark shutdown week */}
         <form onSubmit={handleSubmit} className="mt-4 rounded-lg bg-zinc-50 dark:bg-zinc-800/40 p-4 border border-zinc-100 dark:border-zinc-800 space-y-3">
@@ -171,12 +192,11 @@ export const ShutdownCalendarModal: React.FC<ShutdownCalendarModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200"
+            className="rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 cursor-pointer"
           >
             Done
           </button>
         </div>
-      </div>
-    </div>
+    </SettleModal>
   );
 };

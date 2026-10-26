@@ -33,6 +33,15 @@
     --ring: 240 5.9% 10%;
 
     --radius: 0.5rem;
+
+    /* EasyUI Design Tokens */
+    --bg: #FAFAFA;
+    --surface: #FFFFFF;
+    --surface-hover: #F4F4F5;
+    --border-subtle: #EDEDEF;
+    --text-primary: #0A0A0A;
+    --text-secondary: #52525B;
+    --accent-ring: rgba(10, 10, 10, 0.15);
   }
 
   .dark {
@@ -63,8 +72,26 @@
     --border: 240 3.7% 15.9%;
     --input: 240 3.7% 15.9%;
     --ring: 240 4.9% 83.9%;
+
+    /* EasyUI Design Tokens */
+    --bg: #111113;
+    --surface: #1C1C1F;
+    --surface-hover: #202023;
+    --border-subtle: #18181A;
+    --text-primary: #F2F2F3;
+    --text-secondary: #A1A1A6;
+    --accent-ring: rgba(242, 242, 243, 0.20);
   }
 }
+
+.focus-ring {
+  outline: none;
+}
+.focus-ring:focus-visible {
+  outline: 1px solid var(--accent-ring);
+  outline-offset: 1px;
+}
+
 
 @layer base {
   * {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Coins,
   Users,
@@ -19,12 +19,17 @@ import {
   Clock,
   ShieldCheck,
   LayoutDashboard,
+  User,
+  LogOut,
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { authStorage } from '../../services/backendApi';
 import { Tenure, ReconciliationStatus, AllocationContext } from '../../lib/db/types';
 import { formatTaka } from '../../lib/utils';
 import { CommandPalette } from './CommandPalette';
 import { AuthModal } from '../common/AuthModal';
+import { useConfirmation } from '../../context/ConfirmationContext';
+import { Sidebar, useSidebar, SidebarSection } from '../ui/Sidebar';
 
 interface AppShellProps {
   currentView: string;
@@ -33,6 +38,105 @@ interface AppShellProps {
   onQuickRecord: (type: 'deposit' | 'expense' | 'fee') => void;
   refreshTrigger: number;
   onDataChanged: () => void;
+  onLogout?: () => void;
+}
+
+function SidebarFooterContent({
+  openTenure,
+  onBackupExport,
+  onBackupImport,
+  onResetSeed,
+}: {
+  openTenure: Tenure | null;
+  onBackupExport: () => void;
+  onBackupImport: () => void;
+  onResetSeed: () => void;
+}) {
+  const { collapsed } = useSidebar();
+
+  return (
+    <div className="space-y-1.5">
+      {openTenure && (
+        <div
+          className={`rounded-lg border border-zinc-200/70 dark:border-zinc-800/70 bg-zinc-50/80 dark:bg-zinc-900/80 transition-all ${
+            collapsed ? 'p-1.5 flex justify-center' : 'p-2 space-y-1'
+          }`}
+          title={collapsed ? `Active Term: ${openTenure.name} (since ${openTenure.opened_on})` : undefined}
+        >
+          {collapsed ? (
+            <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">
+                  Current Term
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Active
+                </span>
+              </div>
+              <div className="font-semibold text-xs text-zinc-800 dark:text-zinc-200 truncate">
+                {openTenure.name}
+              </div>
+              <div className="text-[10px] text-zinc-500 truncate">Since {openTenure.opened_on}</div>
+            </>
+          )}
+        </div>
+      )}
+
+      {collapsed ? (
+        <div className="flex flex-col items-center gap-1">
+          <button
+            onClick={onBackupExport}
+            className="p-2 rounded-lg text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors"
+            title="Backup database JSON"
+          >
+            <Download className="h-4 w-4" />
+          </button>
+          <button
+            onClick={onBackupImport}
+            className="p-2 rounded-lg text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors"
+            title="Restore database JSON"
+          >
+            <Upload className="h-4 w-4" />
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-1">
+          <div className="px-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+            Data & Storage
+          </div>
+          <div className="grid grid-cols-2 gap-1 text-xs">
+            <button
+              onClick={onBackupExport}
+              className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-[11px] font-medium transition-colors"
+              title="Export complete database backup as JSON"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Backup
+            </button>
+            <button
+              onClick={onBackupImport}
+              className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-[11px] font-medium transition-colors"
+              title="Restore database from JSON backup"
+            >
+              <Upload className="h-3.5 w-3.5" />
+              Restore
+            </button>
+          </div>
+          <button
+            onClick={onResetSeed}
+            className="w-full flex items-center gap-1.5 rounded-md px-2 py-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-[11px] transition-colors"
+            title="Reset to clean blank database"
+          >
+            <RefreshCw className="h-3 w-3" />
+            Reset Blank State
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export const AppShell: React.FC<AppShellProps> = ({
@@ -42,12 +146,23 @@ export const AppShell: React.FC<AppShellProps> = ({
   onQuickRecord,
   refreshTrigger,
   onDataChanged,
+  onLogout,
 }) => {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const { confirm, notify } = useConfirmation();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
+  const username = authStorage.getUsername() || 'Treasurer';
   const [isDark, setIsDark] = useState(() => {
-    return document.documentElement.classList.contains('dark');
+    if (typeof localStorage !== 'undefined') {
+      const stored = localStorage.getItem('mesl_theme');
+      if (stored === 'dark') return true;
+      if (stored === 'light') return false;
+    }
+    return typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
   });
 
   const [openTenure, setOpenTenure] = useState<Tenure | null>(null);
@@ -83,9 +198,49 @@ export const AppShell: React.FC<AppShellProps> = ({
     loadHeaderStats();
   }, [refreshTrigger]);
 
+  useEffect(() => {
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDark]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setProfileOpen(false);
+      }
+    };
+    if (profileOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [profileOpen]);
+
+  const handleSignOut = async () => {
+    setProfileOpen(false);
+    const ok = await confirm({
+      title: 'Sign Out',
+      description: 'Are you sure you want to sign out of MESL Vault? You will need to log in again to access the treasury.',
+      confirmLabel: 'Sign Out',
+      cancelLabel: 'Cancel',
+      variant: 'danger',
+    });
+    if (ok) {
+      api.auth.logout();
+      onLogout?.();
+    }
+  };
+
   const toggleTheme = () => {
     const next = !isDark;
     setIsDark(next);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('mesl_theme', next ? 'dark' : 'light');
+    }
     if (next) {
       document.documentElement.classList.add('dark');
     } else {
@@ -93,16 +248,81 @@ export const AppShell: React.FC<AppShellProps> = ({
     }
   };
 
-  const navItems = [
-    { id: 'dashboard', label: 'Financial Overview', icon: LayoutDashboard, desc: 'Summary, Metrics & Charts' },
-    { id: 'ledger', label: 'Money & Ledger', icon: Coins, desc: 'Envelopes & Cash Flow' },
-    { id: 'dues', label: 'Fees & Members', icon: Users, desc: 'Weekly Dues & Arrears' },
-    { id: 'allocation', label: 'Allocation Session', icon: Scale, desc: 'Divide General Pool' },
-    { id: 'events', label: 'Events & Projects', icon: Calendar, desc: 'Cost Centers & Sweeps' },
-    { id: 'assets', label: 'Equipment & Assets', icon: Wrench, desc: 'Inventory & Loans' },
-    { id: 'reconciliation', label: 'Monthly Match', icon: CheckCircle2, desc: 'Verify Notes vs Screen' },
-    { id: 'handover', label: 'Tenure & Handover', icon: FileText, desc: 'Lock Period & Print' },
+  const sidebarSections: SidebarSection[] = [
+    {
+      title: 'Treasury & Ledger',
+      items: [
+        {
+          id: 'dashboard',
+          label: 'Financial Overview',
+          icon: <LayoutDashboard />,
+        },
+        {
+          id: 'ledger',
+          label: 'Money & Ledger',
+          icon: <Coins />,
+        },
+        {
+          id: 'dues',
+          label: 'Fees & Members',
+          icon: <Users />,
+        },
+      ],
+    },
+    {
+      title: 'Operations',
+      items: [
+        {
+          id: 'allocation',
+          label: 'Allocation Session',
+          icon: <Scale />,
+        },
+        {
+          id: 'events',
+          label: 'Events & Projects',
+          icon: <Calendar />,
+        },
+        {
+          id: 'assets',
+          label: 'Equipment & Assets',
+          icon: <Wrench />,
+        },
+      ],
+    },
+    {
+      title: 'Governance',
+      items: [
+        {
+          id: 'reconciliation',
+          label: 'Monthly Match',
+          icon: <CheckCircle2 />,
+          badge:
+            recStatus && recStatus.entries_since_last_match > 0
+              ? `${recStatus.entries_since_last_match}`
+              : undefined,
+        },
+        {
+          id: 'handover',
+          label: 'Tenure & Handover',
+          icon: <FileText />,
+        },
+      ],
+    },
   ];
+
+  const sidebarHeader = (
+    <div className="flex items-center gap-2.5 overflow-hidden">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-bold text-sm shadow-sm">
+        M
+      </div>
+      <div className="truncate">
+        <div className="font-semibold text-sm leading-tight text-zinc-900 dark:text-zinc-100">
+          MESL Vault
+        </div>
+        <div className="text-[11px] text-zinc-500 truncate">Electronics Lab Finance</div>
+      </div>
+    </div>
+  );
 
   const handleBackupExport = () => {
     api.exportBackupJson();
@@ -121,7 +341,11 @@ export const AppShell: React.FC<AppShellProps> = ({
             api.importBackupJson(event.target?.result as string);
             onDataChanged();
           } catch (err: any) {
-            alert(err.message);
+            notify({
+              title: 'Backup Import Failed',
+              description: err?.message || 'Could not parse or apply the backup JSON file.',
+              variant: 'danger',
+            });
           }
         };
         reader.readAsText(file);
@@ -130,8 +354,14 @@ export const AppShell: React.FC<AppShellProps> = ({
     input.click();
   };
 
-  const handleResetSeed = () => {
-    if (confirm('Reset lab database to default sample seed data? All current changes will be overwritten.')) {
+  const handleResetSeed = async () => {
+    const ok = await confirm({
+      title: 'Reset Local Database',
+      description: 'Clear all local records and reset to a clean blank database? This will clear all local dummy/sample changes.',
+      confirmLabel: 'Reset Database',
+      variant: 'danger',
+    });
+    if (ok) {
       api.resetToSeed();
       onDataChanged();
     }
@@ -156,242 +386,114 @@ export const AppShell: React.FC<AppShellProps> = ({
         onAuthChange={onDataChanged}
       />
 
-      {/* Sidebar */}
-      <aside
-        className={`flex flex-col border-r border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 transition-all duration-200 z-30 no-print ${
-          sidebarOpen ? 'w-64' : 'w-16'
-        }`}
-      >
-        {/* Lab Branding Header */}
-        <div className="flex h-16 items-center justify-between border-b border-zinc-200 dark:border-zinc-800 px-4">
-          {sidebarOpen ? (
-            <div className="flex items-center gap-2.5 overflow-hidden">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-bold text-sm shadow-sm">
-                ME
-              </div>
-              <div className="truncate">
-                <div className="font-semibold text-sm leading-tight text-zinc-900 dark:text-zinc-100">
-                  MESL Vault
-                </div>
-                <div className="text-[11px] text-zinc-500 truncate">Electronics Lab Finance</div>
-              </div>
-            </div>
-          ) : (
-            <div className="mx-auto flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-bold text-sm">
-              M
-            </div>
-          )}
-        </div>
-
-        {/* Current Tenure Tag */}
-        {sidebarOpen && openTenure && (
-          <div className="px-4 py-3 border-b border-zinc-100 dark:border-zinc-800/60 bg-zinc-50/60 dark:bg-zinc-900/60">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">
-                Current Term
-              </span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                Active
-              </span>
-            </div>
-            <div className="font-semibold text-xs mt-1 text-zinc-800 dark:text-zinc-200 truncate">
-              {openTenure.name}
-            </div>
-            <div className="text-[11px] text-zinc-500 mt-0.5">Since {openTenure.opened_on}</div>
-          </div>
-        )}
-
-        {/* Navigation Items */}
-        <nav className="flex-1 space-y-1 p-2 overflow-y-auto">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const active = currentView === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => onNavigate(item.id)}
-                title={!sidebarOpen ? item.label : undefined}
-                className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                  active
-                    ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 shadow-sm'
-                    : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100'
-                } ${!sidebarOpen ? 'justify-center px-0' : ''}`}
-              >
-                <Icon className="h-4 w-4 shrink-0" />
-                {sidebarOpen && (
-                  <div className="text-left flex-1 min-w-0">
-                    <div className="truncate leading-snug">{item.label}</div>
-                  </div>
-                )}
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* Bottom Utility Controls */}
-        <div className="border-t border-zinc-200 dark:border-zinc-800 p-2 space-y-1">
-          {sidebarOpen ? (
-            <div className="space-y-1">
-              <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-                Data & Storage
-              </div>
-              <div className="grid grid-cols-2 gap-1 text-xs">
-                <button
-                  onClick={handleBackupExport}
-                  className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-[11px]"
-                  title="Export complete database backup as JSON"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Backup
-                </button>
-                <button
-                  onClick={handleBackupImport}
-                  className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-[11px]"
-                  title="Restore database from JSON backup"
-                >
-                  <Upload className="h-3.5 w-3.5" />
-                  Restore
-                </button>
-              </div>
-              <button
-                onClick={handleResetSeed}
-                className="w-full flex items-center gap-1.5 rounded-md px-2 py-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-[11px]"
-                title="Reset to lab sample seed data"
-              >
-                <RefreshCw className="h-3 w-3" />
-                Reset Sample Data
-              </button>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center gap-1">
-              <button
-                onClick={handleBackupExport}
-                className="p-2 rounded text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                title="Backup"
-              >
-                <Download className="h-4 w-4" />
-              </button>
-            </div>
-          )}
-        </div>
-      </aside>
+      {/* EasyUI Sidebar */}
+      <Sidebar
+        sections={sidebarSections}
+        activeId={currentView}
+        onActiveChange={onNavigate}
+        collapsed={sidebarCollapsed}
+        onCollapsedChange={setSidebarCollapsed}
+        mobileOpen={mobileOpen}
+        onMobileOpenChange={setMobileOpen}
+        header={sidebarHeader}
+        footer={
+          <SidebarFooterContent
+            openTenure={openTenure}
+            onBackupExport={handleBackupExport}
+            onBackupImport={handleBackupImport}
+            onResetSeed={handleResetSeed}
+          />
+        }
+      />
 
       {/* Main Content Area */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top Header Bar */}
-        <header className="flex h-16 items-center justify-between border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-6 no-print">
-          <div className="flex items-center gap-4">
+        <header className="flex h-16 items-center justify-between border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 sm:px-6 no-print">
+          {/* Left: Sidebar Toggle & Search Bar */}
+          <div className="flex items-center gap-3 sm:gap-4 flex-1 max-w-md lg:max-w-lg">
             <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-800 dark:hover:text-zinc-200"
-              title="Toggle sidebar"
+              onClick={() => {
+                if (window.matchMedia('(min-width: 768px)').matches) {
+                  setSidebarCollapsed(!sidebarCollapsed);
+                } else {
+                  setMobileOpen(!mobileOpen);
+                }
+              }}
+              className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors cursor-pointer"
+              title="Toggle navigation (⌘B)"
             >
               <Menu className="h-5 w-5" />
             </button>
 
-            {/* Global Search / Cmd+K trigger */}
+            {/* Search Bar / Cmd+K trigger */}
             <button
               onClick={() => setCmdOpen(true)}
-              className="flex items-center gap-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 px-3 py-1.5 text-xs text-zinc-400 hover:border-zinc-300 dark:hover:border-zinc-700 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors"
+              className="w-full flex items-center justify-between gap-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 px-3 py-2 text-xs text-zinc-400 hover:border-zinc-300 dark:hover:border-zinc-700 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors cursor-pointer"
             >
-              <Search className="h-3.5 w-3.5" />
-              <span>Search actions, members, entries...</span>
-              <kbd className="rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-1.5 py-0.5 text-[10px] font-mono text-zinc-500">
+              <div className="flex items-center gap-2.5 truncate">
+                <Search className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+                <span className="truncate">Search actions, members, entries...</span>
+              </div>
+              <kbd className="hidden sm:inline-flex items-center rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-1.5 py-0.5 text-[10px] font-mono text-zinc-500 shadow-2xs shrink-0">
                 ⌘K
               </kbd>
             </button>
           </div>
 
-          {/* Quick Financial Indicators */}
-          <div className="hidden lg:flex items-center gap-6 text-xs">
-            {/* Safe Pool Balance */}
-            {allocContext && (
-              <div className="flex items-center gap-2">
-                <span className="text-zinc-400">Pool Available:</span>
-                <span className="font-mono font-semibold text-zinc-900 dark:text-zinc-100">
-                  {formatTaka(allocContext.pool_balance)}
-                </span>
-                {allocContext.member_credit_held > 0 && (
-                  <span
-                    className="text-[11px] text-zinc-500"
-                    title={`৳${allocContext.member_credit_held.toLocaleString()} member advance fee credit held`}
-                  >
-                    (Safe: {formatTaka(allocContext.pool_after_member_credit)})
-                  </span>
-                )}
-              </div>
-            )}
-
-            {/* Reconciliation Health Tracker */}
-            {recStatus && (
-              <div className="flex items-center gap-2 border-l border-zinc-200 dark:border-zinc-800 pl-6">
-                <Clock className="h-3.5 w-3.5 text-zinc-400" />
-                <span className="text-zinc-400">Last Match:</span>
-                <span
-                  className={`font-mono font-medium ${
-                    (recStatus.days_since_last_match ?? 0) > 30
-                      ? 'text-amber-600 dark:text-amber-400'
-                      : 'text-zinc-700 dark:text-zinc-300'
-                  }`}
-                >
-                  {recStatus.days_since_last_match !== null
-                    ? `${recStatus.days_since_last_match}d ago`
-                    : 'Never'}
-                </span>
-                {recStatus.entries_since_last_match > 0 && (
-                  <span className="rounded-full bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-600 dark:text-zinc-400">
-                    {recStatus.entries_since_last_match} unverified
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Top Actions: Quick Buttons & Theme */}
-          <div className="flex items-center gap-2.5">
-            <button
-              onClick={() => onQuickRecord('deposit')}
-              className="flex items-center gap-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors shadow-sm"
-            >
-              <PlusCircle className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-              <span>Money In</span>
-            </button>
-
-            <button
-              onClick={() => onQuickRecord('expense')}
-              className="flex items-center gap-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors shadow-sm"
-            >
-              <Coins className="h-3.5 w-3.5 text-red-500" />
-              <span>Money Out</span>
-            </button>
-
-            <button
-              onClick={() => onQuickRecord('fee')}
-              className="flex items-center gap-1.5 rounded-lg bg-zinc-900 dark:bg-zinc-100 px-3 py-1.5 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors shadow-sm"
-            >
-              <Users className="h-3.5 w-3.5" />
-              <span>Collect Fees</span>
-            </button>
-
-            <button
-              onClick={() => setAuthOpen(true)}
-              className="flex items-center gap-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/60 px-2.5 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors shadow-sm"
-              title="Click to manage backend connection and authentication"
-            >
-              <ShieldCheck className={`h-3.5 w-3.5 ${isAuthenticated ? 'text-emerald-500' : backendOnline ? 'text-blue-500' : 'text-zinc-400'}`} />
-              <span className="hidden sm:inline">
-                {isAuthenticated ? 'API: Live (Auth)' : backendOnline ? 'API: Live (Guest)' : 'Local Engine'}
-              </span>
-            </button>
-
+          {/* Right: Theme Switcher & Profile Icon with Sign Out */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Theme switcher */}
             <button
               onClick={toggleTheme}
-              className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-600 dark:hover:text-zinc-200 ml-1"
-              title="Toggle theme"
+              className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors cursor-pointer"
+              title={isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
             >
-              {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              {isDark ? <Sun className="h-4 w-4 text-amber-500" /> : <Moon className="h-4 w-4" />}
             </button>
+
+            {/* Profile Icon with Dropdown to Sign Out */}
+            <div className="relative" ref={profileRef}>
+              <button
+                onClick={() => setProfileOpen((prev) => !prev)}
+                className="flex items-center gap-2 p-1 rounded-full border border-zinc-200 dark:border-zinc-700 hover:border-zinc-400 dark:hover:border-zinc-500 bg-zinc-50 dark:bg-zinc-800/80 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-zinc-400/40"
+                title={`Signed in as ${username}`}
+                aria-expanded={profileOpen}
+              >
+                <div className="h-8 w-8 rounded-full bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 flex items-center justify-center text-xs font-bold uppercase shadow-sm">
+                  {username.charAt(0) || 'T'}
+                </div>
+              </button>
+
+              {/* Profile Dropdown */}
+              {profileOpen && (
+                <div className="absolute right-0 mt-2 w-64 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-2 shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-100">
+                  <div className="flex items-center gap-3 p-2.5 border-b border-zinc-100 dark:border-zinc-800">
+                    <div className="h-9 w-9 rounded-full bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 flex items-center justify-center text-sm font-bold uppercase shrink-0">
+                      {username.charAt(0) || 'T'}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold text-xs text-zinc-900 dark:text-zinc-100 truncate">
+                        {username}
+                      </div>
+                      <div className="text-[11px] text-zinc-500 truncate">
+                        MESL Lab Treasurer
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-1.5 mt-1 border-t border-zinc-100 dark:border-zinc-800">
+                    <button
+                      onClick={handleSignOut}
+                      className="w-full flex items-center gap-2 px-2.5 py-2 text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
+                    >
+                      <LogOut className="h-3.5 w-3.5" />
+                      <span>Sign Out</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 

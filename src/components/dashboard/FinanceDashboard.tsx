@@ -20,7 +20,10 @@ import {
   DollarSign,
   ChevronRight,
   Scale,
+  Share2,
 } from 'lucide-react';
+import { FeeReceiptModal } from '../dues/FeeReceiptModal';
+import { InteractiveAreaChart, AreaChartData, ChartPoint } from '../ui/InteractiveAreaChart';
 import {
   AreaChart,
   Area,
@@ -45,7 +48,7 @@ import {
   CardFooter,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Button } from '@/components/ui/Button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import {
@@ -117,8 +120,9 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
   onNavigate,
   onQuickRecord,
 }) => {
-  const [timelineMode, setTimelineMode] = useState<'monthly' | 'cumulative'>('monthly');
+  const [timelineMode, setTimelineMode] = useState<'monthly' | 'cumulative'>('cumulative');
   const [timeRange, setTimeRange] = useState<'all' | '6m' | '30d'>('all');
+  const [receiptTx, setReceiptTx] = useState<LedgerEntryView | null>(null);
 
   // --- 1. OVERALL TOTAL FINANCIAL KPI METRICS ---
   const kpis = useMemo(() => {
@@ -233,6 +237,56 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
     }
     return result;
   }, [entries, timeRange]);
+
+  // --- 2.1 INTERACTIVE AREA CHART VELOCITY DATA ---
+  const velocityChartData = useMemo<AreaChartData>(() => {
+    const valid = [...entries]
+      .filter((e) => !e.is_voided && e.kind !== 'reversal')
+      .sort((a, b) => a.occurred_on.localeCompare(b.occurred_on));
+
+    const dayDeltaMap = new Map<string, number>();
+    valid.forEach((tx) => {
+      let net = 0;
+      if (tx.kind === 'deposit' || tx.kind === 'opening') {
+        net = tx.lines.reduce((s, l) => (l.amount > 0 ? s + l.amount : s), 0);
+      } else if (tx.kind === 'expense') {
+        net = -tx.lines.reduce((s, l) => (l.amount < 0 ? s + Math.abs(l.amount) : s), 0);
+      }
+      dayDeltaMap.set(tx.occurred_on, (dayDeltaMap.get(tx.occurred_on) || 0) + net);
+    });
+
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+    const totalLiquid = envelopes.reduce((acc, env) => acc + (env.active ? env.balance : 0), 0);
+
+    const buildDaysSeries = (numDays: number): ChartPoint[] => {
+      const points: ChartPoint[] = [];
+      let currentVal = totalLiquid;
+      for (let i = 0; i < numDays; i++) {
+        const d = new Date(today);
+        d.setDate(d.getDate() - i);
+        const dateStr = d.toISOString().split('T')[0];
+        const utcMs = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+
+        points.unshift({ date: utcMs, value: Math.max(0, currentVal) });
+
+        const deltaOnDay = dayDeltaMap.get(dateStr) || 0;
+        currentVal -= deltaOnDay;
+      }
+      return points;
+    };
+
+    const earliestDateStr = valid.length > 0 ? valid[0].occurred_on : new Date().toISOString().split('T')[0];
+    const earliestDate = new Date(earliestDateStr + 'T00:00:00');
+    const allDays = Math.max(14, Math.ceil((today.getTime() - earliestDate.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+
+    return {
+      '7D': buildDaysSeries(7),
+      '30D': buildDaysSeries(30),
+      '6M': buildDaysSeries(Math.min(180, allDays)),
+      'ALL': buildDaysSeries(Math.min(365 * 3, allDays)),
+    };
+  }, [entries, envelopes]);
 
   // --- 3. ENVELOPE DISTRIBUTION DATA ---
   const envelopeChartData = useMemo(() => {
@@ -535,69 +589,80 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Range Selector */}
-            <div className="flex items-center rounded-lg border border-border bg-muted/30 p-1 text-xs">
-              <button
-                onClick={() => setTimeRange('all')}
-                className={`px-2.5 py-0.5 rounded-md font-medium transition-all ${
-                  timeRange === 'all'
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                All Time
-              </button>
-              <button
-                onClick={() => setTimeRange('6m')}
-                className={`px-2.5 py-0.5 rounded-md font-medium transition-all ${
-                  timeRange === '6m'
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                6 Months
-              </button>
-              <button
-                onClick={() => setTimeRange('30d')}
-                className={`px-2.5 py-0.5 rounded-md font-medium transition-all ${
-                  timeRange === '30d'
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                Recent
-              </button>
-            </div>
+            {timelineMode === 'monthly' && (
+              /* Range Selector for Bar Breakdown */
+              <div className="flex items-center rounded-lg border border-border bg-muted/30 p-1 text-xs">
+                <button
+                  onClick={() => setTimeRange('all')}
+                  className={`px-2.5 py-0.5 rounded-md font-medium transition-all cursor-pointer ${
+                    timeRange === 'all'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  All Time
+                </button>
+                <button
+                  onClick={() => setTimeRange('6m')}
+                  className={`px-2.5 py-0.5 rounded-md font-medium transition-all cursor-pointer ${
+                    timeRange === '6m'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  6 Months
+                </button>
+                <button
+                  onClick={() => setTimeRange('30d')}
+                  className={`px-2.5 py-0.5 rounded-md font-medium transition-all cursor-pointer ${
+                    timeRange === '30d'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Recent
+                </button>
+              </div>
+            )}
 
             {/* Toggle Graph Mode */}
             <div className="flex items-center rounded-lg border border-border bg-muted/30 p-1 text-xs">
               <button
-                onClick={() => setTimelineMode('monthly')}
-                className={`px-2.5 py-0.5 rounded-md font-medium transition-all ${
-                  timelineMode === 'monthly'
-                    ? 'bg-background text-foreground shadow-sm'
+                onClick={() => setTimelineMode('cumulative')}
+                className={`px-2.5 py-1 rounded-md font-medium transition-all cursor-pointer ${
+                  timelineMode === 'cumulative'
+                    ? 'bg-background text-foreground shadow-sm font-semibold'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                In vs Out
+                Interactive Velocity
               </button>
               <button
-                onClick={() => setTimelineMode('cumulative')}
-                className={`px-2.5 py-0.5 rounded-md font-medium transition-all ${
-                  timelineMode === 'cumulative'
-                    ? 'bg-background text-foreground shadow-sm'
+                onClick={() => setTimelineMode('monthly')}
+                className={`px-2.5 py-1 rounded-md font-medium transition-all cursor-pointer ${
+                  timelineMode === 'monthly'
+                    ? 'bg-background text-foreground shadow-sm font-semibold'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                Reserve Growth
+                In vs Out Breakdown
               </button>
             </div>
           </div>
         </CardHeader>
 
-        <CardContent className="pt-4">
-          <ChartContainer config={cashFlowChartConfig} className="h-[280px] w-full">
-            {timelineMode === 'monthly' ? (
+        <CardContent className="pt-2">
+          {timelineMode === 'cumulative' ? (
+            <InteractiveAreaChart
+              data={velocityChartData}
+              defaultRange="30D"
+              title="Liquid Cash Reserve"
+              height={300}
+              currencySymbol="৳"
+              chartColor="text-emerald-500 dark:text-emerald-400"
+            />
+          ) : (
+            <ChartContainer config={cashFlowChartConfig} className="h-[280px] w-full pt-4">
               <BarChart data={timelineData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                 <XAxis
@@ -642,52 +707,8 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
                   maxBarSize={48}
                 />
               </BarChart>
-            ) : (
-              <AreaChart data={timelineData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="balanceGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0.0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis
-                  dataKey="label"
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                />
-                <YAxis
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(val) => `৳${(val / 1000).toFixed(0)}k`}
-                />
-                <ChartTooltip
-                  content={
-                    <ChartTooltipContent
-                      formatter={(val) => (
-                        <div className="flex items-center justify-between gap-4 w-full">
-                          <span className="text-muted-foreground">Net Cumulative Reserve:</span>
-                          <span className="font-mono font-semibold tabular-nums text-foreground">
-                            {formatTaka(Number(val))}
-                          </span>
-                        </div>
-                      )}
-                    />
-                  }
-                />
-                <Area
-                  type="monotone"
-                  dataKey="balance"
-                  name="balance"
-                  stroke="#6366f1"
-                  strokeWidth={2.5}
-                  fillOpacity={1}
-                  fill="url(#balanceGrad)"
-                />
-              </AreaChart>
-            )}
-          </ChartContainer>
+            </ChartContainer>
+          )}
         </CardContent>
 
         <CardFooter className="flex items-center justify-between border-t border-border/40 py-2.5 px-6 text-xs text-muted-foreground bg-muted/10">
@@ -1095,6 +1116,7 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
                   <th className="pb-2">Source / Cost Center</th>
                   <th className="pb-2">Logged By</th>
                   <th className="pb-2 pr-1 text-right">Net Value</th>
+                  <th className="pb-2 text-center w-12">Receipt</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
@@ -1105,6 +1127,11 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
                     const isPositive =
                       tx.kind === 'deposit' || tx.kind === 'opening' || tx.kind === 'sweep';
                     const totalAmt = tx.lines.reduce((s, l) => s + Math.abs(l.amount), 0);
+                    const isFee =
+                      tx.source === 'weekly_fee' ||
+                      tx.tag === 'fees' ||
+                      !!tx.member_id ||
+                      !!tx.member_name;
 
                     return (
                       <tr key={tx.id} className="hover:bg-muted/30 transition-colors">
@@ -1161,6 +1188,19 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
                               : formatTaka(totalAmt)}
                           </span>
                         </td>
+                        <td className="py-2.5 text-center">
+                          {isFee ? (
+                            <button
+                              onClick={() => setReceiptTx(tx)}
+                              title="Share fee receipt / snapshot"
+                              className="p-1 rounded text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+                            >
+                              <Share2 className="h-3.5 w-3.5" />
+                            </button>
+                          ) : (
+                            <span className="text-muted-foreground/30">—</span>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
@@ -1169,6 +1209,12 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
           </div>
         </CardContent>
       </Card>
+
+      <FeeReceiptModal
+        isOpen={!!receiptTx}
+        onClose={() => setReceiptTx(null)}
+        transaction={receiptTx}
+      />
     </div>
   );
 };

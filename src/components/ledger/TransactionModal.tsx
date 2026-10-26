@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, ArrowDownRight, ArrowUpRight, ArrowRightLeft, RotateCcw, Sparkles, AlertCircle } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, ArrowRightLeft, RotateCcw, Sparkles, AlertCircle } from 'lucide-react';
 import { api } from '../../services/api';
 import { Envelope, CostCenter, Member, IncomeSource, EntryKind } from '../../lib/db/types';
 import { formatTaka } from '../../lib/utils';
+import { SettleModal } from '../ui/SettleModal';
 
 interface TransactionModalProps {
   isOpen: boolean;
@@ -75,7 +76,10 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     e.preventDefault();
     const amt = parseInt(amount, 10);
     if (isNaN(amt) || amt <= 0) {
-      alert('Please enter a valid positive taka amount.');
+      onError({
+        reason: 'Invalid Transaction Amount',
+        remediation: 'Please enter a valid positive whole taka amount greater than 0.',
+      });
       return;
     }
 
@@ -115,7 +119,10 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
         const fromId = parseInt(selectedEnvelopeId, 10);
         const toId = parseInt(targetEnvelopeId, 10);
         if (fromId === toId) {
-          alert('Cannot transfer money into the same envelope.');
+          onError({
+            reason: 'Identical Transfer Envelopes',
+            remediation: 'Source and destination must be different envelopes to transfer funds.',
+          });
           return;
         }
         await api.recordTransaction({
@@ -134,7 +141,10 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
         });
       } else if (kind === 'refund') {
         if (!memId) {
-          alert('Please select the member receiving this refund.');
+          onError({
+            reason: 'Member Required For Refund',
+            remediation: 'Please select the member receiving this refund from the dropdown.',
+          });
           return;
         }
         await api.recordRefund({
@@ -156,21 +166,12 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-      <div className="w-full max-w-lg rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-2xl">
-        <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3">
-          <div className="flex items-center gap-2">
-            <h3 className="font-semibold text-base text-zinc-900 dark:text-zinc-100">
-              Record Money Movement
-            </h3>
-          </div>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-700 dark:hover:text-zinc-300"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+    <SettleModal
+      open={isOpen}
+      onClose={onClose}
+      size="lg"
+      title="Record Money Movement"
+    >
 
         {/* Tab Switcher */}
         <div className="mt-4 flex rounded-lg bg-zinc-100 dark:bg-zinc-800 p-1 text-xs font-medium">
@@ -470,7 +471,6 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </SettleModal>
   );
 };

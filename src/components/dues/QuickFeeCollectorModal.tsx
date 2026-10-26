@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { X, Users, ArrowDownRight, CheckCircle2 } from 'lucide-react';
-import { Member, MemberStanding } from '../../lib/db/types';
+import { Users, ArrowDownRight, CheckCircle2, AlertTriangle, Share2 } from 'lucide-react';
+import { Member, MemberStanding, LedgerEntryView } from '../../lib/db/types';
 import { api } from '../../services/api';
 import { formatTaka } from '../../lib/utils';
+import { FeeReceiptModal } from './FeeReceiptModal';
+import { SettleModal } from '../ui/SettleModal';
 
 interface QuickFeeCollectorModalProps {
   isOpen: boolean;
@@ -26,9 +28,12 @@ export const QuickFeeCollectorModal: React.FC<QuickFeeCollectorModalProps> = ({
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [note, setNote] = useState<string>('Weekly membership dues');
   const [recordedBy, setRecordedBy] = useState('Treasurer');
+  const [error, setError] = useState<{ reason: string; remediation?: string } | null>(null);
+  const [receiptTx, setReceiptTx] = useState<LedgerEntryView | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
+    setError(null);
     const load = async () => {
       try {
         const [mems, st] = await Promise.all([api.getMembers(), api.getDuesOverview()]);
@@ -57,17 +62,21 @@ export const QuickFeeCollectorModal: React.FC<QuickFeeCollectorModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (enteredAmount <= 0) {
-      alert('Please enter a positive taka amount.');
+      setError({
+        reason: 'Invalid Amount',
+        remediation: 'Please enter a positive taka amount greater than 0.',
+      });
       return;
     }
     const memId = parseInt(selectedMemberId, 10);
     if (!memId) return;
 
+    setError(null);
     try {
       const pool = (await api.getEnvelopes()).find((e) => e.is_pool);
-      if (!pool) throw new Error('Pool not found');
+      if (!pool) throw new Error('General Pool envelope not found');
 
-      await api.recordTransaction({
+      const createdTx = await api.recordTransaction({
         kind: 'deposit',
         occurred_on: date,
         recorded_by: recordedBy,
@@ -78,30 +87,66 @@ export const QuickFeeCollectorModal: React.FC<QuickFeeCollectorModalProps> = ({
         lines: [{ envelope_id: pool.id, amount: enteredAmount }],
       });
 
+      const memberObj = members.find((m) => m.id === memId);
+      const viewTx: LedgerEntryView = {
+        ...createdTx,
+        lines: [{ id: 1, transaction_id: createdTx.id, envelope_id: pool.id, amount: enteredAmount }],
+        is_voided: false,
+        corrected_from: null,
+        member_name: memberObj?.name || currentMemberStanding?.who_name || 'Member',
+      };
+
       onSuccess();
-      onClose();
-    } catch (err) {
+      setReceiptTx(viewTx);
+    } catch (err: any) {
+      setError({
+        reason: err?.reason || err?.message || 'Failed to collect fees.',
+        remediation: err?.remediation,
+      });
       onError(err);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-100">
-      <div className="w-full max-w-md rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-2xl">
-        <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3">
+    <>
+      <FeeReceiptModal
+        isOpen={!!receiptTx}
+        onClose={() => {
+          setReceiptTx(null);
+          onClose();
+        }}
+        transaction={receiptTx}
+        member={members.find((m) => m.id === parseInt(selectedMemberId, 10))}
+        standing={currentMemberStanding}
+      />
+
+      <SettleModal
+        open={isOpen}
+        onClose={onClose}
+        size="md"
+        title={
           <div className="flex items-center gap-2">
             <Users className="h-4 w-4 text-zinc-500" />
-            <h3 className="font-semibold text-base text-zinc-900 dark:text-zinc-100">
-              Collect Member Fees
-            </h3>
+            <span>Collect Member Fees</span>
           </div>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-700 dark:hover:text-zinc-300"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+        }
+      >
+
+        {/* Error / Refusal Alert */}
+        {error && (
+          <div className="mt-3 rounded-lg bg-amber-50 dark:bg-amber-950/40 p-3.5 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 space-y-1 animate-in fade-in">
+            <div className="flex items-center gap-2 font-semibold text-xs text-amber-800 dark:text-amber-300">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+              <span>Action Refused</span>
+            </div>
+            <p className="text-xs leading-relaxed">{error.reason}</p>
+            {error.remediation && (
+              <p className="text-[11px] text-amber-700 dark:text-amber-400 pt-1 border-t border-amber-200/50 dark:border-amber-800/50">
+                <strong>How to proceed: </strong>{error.remediation}
+              </p>
+            )}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           <div>
@@ -257,7 +302,7 @@ export const QuickFeeCollectorModal: React.FC<QuickFeeCollectorModalProps> = ({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+      </SettleModal>
+    </>
   );
 };

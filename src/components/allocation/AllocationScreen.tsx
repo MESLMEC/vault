@@ -17,6 +17,7 @@ import {
 } from '../../lib/db/types';
 import { api } from '../../services/api';
 import { formatTaka } from '../../lib/utils';
+import { useConfirmation } from '../../context/ConfirmationContext';
 
 interface AllocationScreenProps {
   onAllocated: () => void;
@@ -27,6 +28,7 @@ export const AllocationScreen: React.FC<AllocationScreenProps> = ({
   onAllocated,
   onError,
 }) => {
+  const { notify } = useConfirmation();
   const [context, setContext] = useState<AllocationContext | null>(null);
   const [envelopes, setEnvelopes] = useState<EnvelopeBalance[]>([]);
   const [amountToSplit, setAmountToSplit] = useState<string>('');
@@ -101,11 +103,17 @@ export const AllocationScreen: React.FC<AllocationScreenProps> = ({
   const handleCommitAllocation = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isOverdrawn) {
-      alert(`Cannot allocate more than current pool balance (৳${poolBalance.toLocaleString()}).`);
+      onError({
+        reason: 'Allocation Exceeds Pool Balance',
+        remediation: `Cannot allocate more than current pool balance (৳${poolBalance.toLocaleString()}). Adjust envelope amounts down to match available funds.`,
+      });
       return;
     }
     if (totalAllocated <= 0) {
-      alert('Please allocate at least ৳1 to envelopes.');
+      onError({
+        reason: 'Zero Allocation Amount',
+        remediation: 'Please allocate at least ৳1 to envelopes before committing session.',
+      });
       return;
     }
 
@@ -117,7 +125,11 @@ export const AllocationScreen: React.FC<AllocationScreenProps> = ({
         note: meetingNote.trim() || 'Committee allocation session',
         amounts: editedAmounts,
       });
-      alert(`Allocation session successfully committed! ৳${totalAllocated.toLocaleString()} distributed across envelopes.`);
+      notify({
+        title: 'Allocation Committed',
+        description: `Allocation session successfully committed! ৳${totalAllocated.toLocaleString()} distributed across envelopes.`,
+        variant: 'success',
+      });
       await loadContext();
       onAllocated();
     } catch (err) {

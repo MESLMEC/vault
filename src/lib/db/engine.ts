@@ -65,7 +65,7 @@ export interface DatabaseState {
   reconciliation_envelopes: ReconciliationEnvelope[];
 }
 
-const STORAGE_KEY = 'mesl_lab_finance_v1';
+export const STORAGE_KEY = 'mesl_vault_state_v4';
 
 // Custom Human Error for Refusals
 export class RefusalError extends Error {

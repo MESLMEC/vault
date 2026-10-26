@@ -1,11 +1,11 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { FinanceEngine } from '../src/lib/db/engine';
-import { getSeedData } from '../src/lib/db/seed';
+import { getTestSeedData } from '../src/lib/db/seed';
 
 describe('FinanceEngine Core Business Rules', () => {
   it('prevents spending more than an envelope balance (zero-overdraft invariant)', () => {
-    const engine = new FinanceEngine(getSeedData());
+    const engine = new FinanceEngine(getTestSeedData());
     const balances = engine.getEnvelopeBalances();
     const compEnv = balances.find((b) => b.id === 2); // Components envelope (balance: ৳10,600)
     assert(compEnv);
@@ -31,7 +31,7 @@ describe('FinanceEngine Core Business Rules', () => {
   });
 
   it('enforces transfer amounts must sum to zero', () => {
-    const engine = new FinanceEngine(getSeedData());
+    const engine = new FinanceEngine(getTestSeedData());
     assert.throws(
       () => {
         engine.recordTransaction({
@@ -54,7 +54,7 @@ describe('FinanceEngine Core Business Rules', () => {
   });
 
   it('allocates according to priority cap fills and splits remainder', () => {
-    const engine = new FinanceEngine(getSeedData());
+    const engine = new FinanceEngine(getTestSeedData());
     const suggestion = engine.getAllocationSuggestion(10000);
 
     // Capped priority 1 (Components & Stash) has target_cap 15000 and current balance 10600, gap is 4400
@@ -69,7 +69,7 @@ describe('FinanceEngine Core Business Rules', () => {
   });
 
   it('calculates member standing accurately across shutdown weeks and rate changes', () => {
-    const engine = new FinanceEngine(getSeedData());
+    const engine = new FinanceEngine(getTestSeedData());
     const standing = engine.getMemberStanding('2025-10-31');
     const tanvir = standing.find((s) => s.who_name === 'Tanvir Ahmed');
     assert(tanvir);
@@ -81,7 +81,7 @@ describe('FinanceEngine Core Business Rules', () => {
   });
 
   it('detects transposed digits and extra zero typo suspects', () => {
-    const engine = new FinanceEngine(getSeedData());
+    const engine = new FinanceEngine(getTestSeedData());
     // Suppose an expense was recorded as -2400 (Tx 6), but notes say -4200 (swapped digits)
     // diff = counted - screen = -4200 - (-2400) = -1800
     const suspects = engine.getDifferenceSuspects(-1800);
@@ -92,7 +92,7 @@ describe('FinanceEngine Core Business Rules', () => {
   });
 
   it('closes tenure, snapshots state, and creates carry-over in new tenure', async () => {
-    const engine = new FinanceEngine(getSeedData());
+    const engine = new FinanceEngine(getTestSeedData());
     const prevBalances = engine.getEnvelopeBalances();
     const prevTotal = prevBalances.reduce((s, b) => s + b.balance, 0);
 

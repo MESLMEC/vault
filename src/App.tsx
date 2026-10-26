@@ -12,6 +12,7 @@ import { ReconciliationScreen } from './components/reconciliation/Reconciliation
 import { HandoverScreen } from './components/handover/HandoverScreen';
 import { FinanceDashboard } from './components/dashboard/FinanceDashboard';
 import { RefusalModal } from './components/common/RefusalModal';
+import { LoginScreen } from './components/auth/LoginScreen';
 import { api } from './services/api';
 import {
   EnvelopeBalance,
@@ -26,6 +27,7 @@ import {
 } from './lib/db/types';
 
 export const App: React.FC = () => {
+  const [isAuthenticated, setIsAuthenticated] = useState(() => api.auth.isAuthenticated());
   const [currentView, setCurrentView] = useState('dashboard');
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
@@ -60,6 +62,7 @@ export const App: React.FC = () => {
   const [quickFeeOpen, setQuickFeeOpen] = useState(false);
 
   const triggerRefresh = () => {
+    setIsAuthenticated(api.auth.isAuthenticated());
     setRefreshTrigger((prev) => prev + 1);
   };
 
@@ -98,8 +101,16 @@ export const App: React.FC = () => {
   };
 
   useEffect(() => {
-    loadData();
-  }, [refreshTrigger]);
+    if (isAuthenticated) {
+      loadData();
+    }
+  }, [refreshTrigger, isAuthenticated]);
+
+  const handleLogout = () => {
+    api.auth.logout();
+    setIsAuthenticated(false);
+    triggerRefresh();
+  };
 
   const handleQuickRecord = (type: 'deposit' | 'expense' | 'fee') => {
     if (type === 'fee') {
@@ -109,23 +120,28 @@ export const App: React.FC = () => {
     }
   };
 
-  return (
-    <AppShell
-      currentView={currentView}
-      onNavigate={setCurrentView}
-      onQuickRecord={handleQuickRecord}
-      refreshTrigger={refreshTrigger}
-      onDataChanged={triggerRefresh}
-    >
-      {/* Human Refusal Explanation Modal */}
-      <RefusalModal
-        isOpen={refusalState.isOpen}
-        onClose={() => setRefusalState((prev) => ({ ...prev, isOpen: false }))}
-        reason={refusalState.reason}
-        remediation={refusalState.remediation}
+  if (!isAuthenticated) {
+    return (
+      <LoginScreen
+        onLoginSuccess={() => {
+          setIsAuthenticated(true);
+          triggerRefresh();
+        }}
       />
+    );
+  }
 
-      {/* Quick Record Transaction Modal */}
+  return (
+    <>
+      <AppShell
+        currentView={currentView}
+        onNavigate={setCurrentView}
+        onQuickRecord={handleQuickRecord}
+        refreshTrigger={refreshTrigger}
+        onDataChanged={triggerRefresh}
+        onLogout={handleLogout}
+      >
+        {/* Quick Record Transaction Modal */}
       <TransactionModal
         isOpen={quickTxModal.isOpen}
         onClose={() => setQuickTxModal((prev) => ({ ...prev, isOpen: false }))}
@@ -179,6 +195,7 @@ export const App: React.FC = () => {
         <DuesOverviewTable
           standing={standing}
           members={members}
+          entries={entries}
           onRefresh={triggerRefresh}
           onError={handleError}
         />
@@ -209,6 +226,14 @@ export const App: React.FC = () => {
         <HandoverScreen onRefresh={triggerRefresh} onError={handleError} />
       )}
     </AppShell>
+
+    <RefusalModal
+      isOpen={refusalState.isOpen}
+      onClose={() => setRefusalState((prev) => ({ ...prev, isOpen: false }))}
+      reason={refusalState.reason}
+      remediation={refusalState.remediation}
+    />
+  </>
   );
 };
 

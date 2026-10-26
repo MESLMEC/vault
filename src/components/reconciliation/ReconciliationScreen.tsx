@@ -20,6 +20,7 @@ import {
 } from '../../lib/db/types';
 import { api } from '../../services/api';
 import { formatTaka, formatDate } from '../../lib/utils';
+import { useConfirmation } from '../../context/ConfirmationContext';
 
 interface ReconciliationScreenProps {
   onRefresh: () => void;
@@ -30,6 +31,7 @@ export const ReconciliationScreen: React.FC<ReconciliationScreenProps> = ({
   onRefresh,
   onError,
 }) => {
+  const { notify } = useConfirmation();
   const [status, setStatus] = useState<ReconciliationStatus | null>(null);
   const [balances, setBalances] = useState<EnvelopeBalance[]>([]);
   const [unverified, setUnverified] = useState<
@@ -103,9 +105,17 @@ export const ReconciliationScreen: React.FC<ReconciliationScreenProps> = ({
       });
 
       if (rec.matched) {
-        alert('Reconciliation MATCH verified! The screen agrees with your notes. Checkpoint saved.');
+        notify({
+          title: 'Reconciliation Verified',
+          description: 'Reconciliation MATCH verified! The screen agrees with physical cash and notes. Checkpoint saved.',
+          variant: 'success',
+        });
       } else {
-        alert(`Discrepancy of ৳${rec.difference.toLocaleString()} recorded. Use the diagnosed suspect entries below to fix it.`);
+        notify({
+          title: 'Discrepancy Recorded',
+          description: `Discrepancy of ৳${rec.difference.toLocaleString()} recorded. Use the diagnosed suspect entries below to fix it.`,
+          variant: 'warning',
+        });
       }
 
       await loadData();

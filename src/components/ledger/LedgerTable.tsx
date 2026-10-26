@@ -12,11 +12,14 @@ import {
   Layers,
   ChevronDown,
   ChevronUp,
+  Share2,
+  Receipt,
 } from 'lucide-react';
 import { LedgerEntryView, Envelope, CostCenter } from '../../lib/db/types';
 import { formatTaka, formatDate } from '../../lib/utils';
 import { FixAmountModal } from './FixAmountModal';
 import { EditLabelModal } from './EditLabelModal';
+import { FeeReceiptModal } from '../dues/FeeReceiptModal';
 import { api } from '../../services/api';
 
 interface LedgerTableProps {
@@ -41,6 +44,7 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
   // Modal states
   const [fixEntry, setFixEntry] = useState<LedgerEntryView | null>(null);
   const [editLabelEntry, setEditLabelEntry] = useState<LedgerEntryView | null>(null);
+  const [receiptTx, setReceiptTx] = useState<LedgerEntryView | null>(null);
   const [activeTrailId, setActiveTrailId] = useState<number | null>(null);
   const [trailData, setTrailData] = useState<LedgerEntryView[]>([]);
 
@@ -96,6 +100,11 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
         onClose={() => setEditLabelEntry(null)}
         onSuccess={onRefresh}
         onError={onError}
+      />
+      <FeeReceiptModal
+        isOpen={!!receiptTx}
+        onClose={() => setReceiptTx(null)}
+        transaction={receiptTx}
       />
 
       {/* Filter and Search Bar */}
@@ -291,6 +300,15 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
                         {/* Actions */}
                         <td className="py-3 px-4 text-center whitespace-nowrap">
                           <div className="flex items-center justify-center gap-1">
+                            {(tx.source === 'weekly_fee' || tx.tag === 'fees' || !!tx.member_id || !!tx.member_name) && (
+                              <button
+                                onClick={() => setReceiptTx(tx)}
+                                title="View and download member fee receipt"
+                                className="rounded p-1 text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/60"
+                              >
+                                <Receipt className="h-3.5 w-3.5" />
+                              </button>
+                            )}
                             {!isOpening && (
                               <button
                                 onClick={() => setFixEntry(tx)}

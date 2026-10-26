@@ -12,19 +12,23 @@ import {
   UserCheck,
   TrendingUp,
   Edit2,
+  Share2,
+  Receipt,
 } from 'lucide-react';
-import { MemberStanding, Member } from '../../lib/db/types';
+import { MemberStanding, Member, LedgerEntryView } from '../../lib/db/types';
 import { formatTaka, formatDate } from '../../lib/utils';
 import { QuickFeeCollectorModal } from './QuickFeeCollectorModal';
 import { WaiverModal } from './WaiverModal';
 import { ShutdownCalendarModal } from './ShutdownCalendarModal';
 import { FeeRatesModal } from './FeeRatesModal';
 import { EditMemberModal } from './EditMemberModal';
+import { FeeReceiptModal } from './FeeReceiptModal';
 import { api } from '../../services/api';
 
 interface DuesOverviewTableProps {
   standing: MemberStanding[];
   members: Member[];
+  entries?: LedgerEntryView[];
   onRefresh: () => void;
   onError: (err: any) => void;
 }
@@ -32,6 +36,7 @@ interface DuesOverviewTableProps {
 export const DuesOverviewTable: React.FC<DuesOverviewTableProps> = ({
   standing,
   members,
+  entries = [],
   onRefresh,
   onError,
 }) => {
@@ -47,6 +52,11 @@ export const DuesOverviewTable: React.FC<DuesOverviewTableProps> = ({
   const [showAddMember, setShowAddMember] = useState(false);
   const [feeRatesOpen, setFeeRatesOpen] = useState(false);
   const [editMember, setEditMember] = useState<Member | null>(null);
+  const [selectedReceipt, setSelectedReceipt] = useState<{
+    tx: LedgerEntryView;
+    member?: Member | null;
+    standing?: MemberStanding | null;
+  } | null>(null);
 
   // New member form states
   const [newMemberName, setNewMemberName] = useState('');
@@ -81,6 +91,51 @@ export const DuesOverviewTable: React.FC<DuesOverviewTableProps> = ({
   const totalCredit = standing.filter((s) => s.balance > 0).reduce((sum, s) => sum + s.balance, 0);
   const countOverdue = standing.filter((s) => s.weeks_overdue > 0).length;
 
+  const handleShareMemberReceipt = (s: MemberStanding) => {
+    const mem = members.find((m) => m.id === s.who_id) || null;
+    const lastFeeTx = entries.find(
+      (tx) =>
+        !tx.is_voided &&
+        (tx.member_id === s.who_id || tx.member_name === s.who_name) &&
+        (tx.source === 'weekly_fee' || tx.tag === 'fees' || tx.kind === 'deposit')
+    );
+
+    if (lastFeeTx) {
+      setSelectedReceipt({ tx: lastFeeTx, member: mem, standing: s });
+    } else {
+      const statementTx: LedgerEntryView = {
+        id: s.who_id,
+        tenure_id: 1,
+        kind: 'deposit',
+        occurred_on: new Date().toISOString().split('T')[0],
+        recorded_at: new Date().toISOString(),
+        recorded_by: 'Treasurer',
+        note:
+          s.balance >= 0
+            ? 'Member Dues Account Status (Settled / In Advance)'
+            : `Dues Statement (${s.weeks_overdue} weeks behind)`,
+        tag: 'fees',
+        source: 'weekly_fee',
+        member_id: s.who_id,
+        member_name: s.who_name,
+        cost_center_id: null,
+        reverses_id: null,
+        replaces_id: null,
+        lines: [
+          {
+            id: 1,
+            transaction_id: s.who_id,
+            envelope_id: 1,
+            amount: Math.abs(s.credits || s.owed || 50),
+          },
+        ],
+        is_voided: false,
+        corrected_from: null,
+      };
+      setSelectedReceipt({ tx: statementTx, member: mem, standing: s });
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Modals */}
@@ -114,6 +169,13 @@ export const DuesOverviewTable: React.FC<DuesOverviewTableProps> = ({
         onClose={() => setEditMember(null)}
         onSuccess={onRefresh}
         onError={onError}
+      />
+      <FeeReceiptModal
+        isOpen={!!selectedReceipt}
+        onClose={() => setSelectedReceipt(null)}
+        transaction={selectedReceipt?.tx || null}
+        member={selectedReceipt?.member}
+        standing={selectedReceipt?.standing}
       />
 
       {/* Top Header Summary */}

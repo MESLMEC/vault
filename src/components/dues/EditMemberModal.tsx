@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { X, UserCheck, Calendar, Clock, Plus, ShieldAlert, History, Edit3 } from 'lucide-react';
+import { UserCheck, Calendar, Clock, Plus, ShieldAlert, History, Edit3 } from 'lucide-react';
 import { api } from '../../services/api';
 import { Member, MembershipPeriod, MemberAdjustment } from '../../lib/db/types';
 import { formatTaka } from '../../lib/utils';
+import { useConfirmation } from '../../context/ConfirmationContext';
+import { SettleModal } from '../ui/SettleModal';
 
 interface EditMemberModalProps {
   member: Member | null;
@@ -17,6 +19,7 @@ export const EditMemberModal: React.FC<EditMemberModalProps> = ({
   onSuccess,
   onError,
 }) => {
+  const { confirm } = useConfirmation();
   const [name, setName] = useState('');
   const [batch, setBatch] = useState('');
   const [note, setNote] = useState('');
@@ -73,17 +76,23 @@ export const EditMemberModal: React.FC<EditMemberModalProps> = ({
   };
 
   const handleEndPeriod = async () => {
-    if (confirm(`End membership period for ${member.name} as of ${endDate}? Dues will freeze on this date.`)) {
-      setLoading(true);
-      try {
-        await api.endMembership(member.id, endDate);
-        await loadMemberData(member.id);
-        onSuccess();
-      } catch (err) {
-        onError(err);
-      } finally {
-        setLoading(false);
-      }
+    const ok = await confirm({
+      title: 'End Membership Period',
+      description: `End active membership for ${member.name} as of ${endDate}? Dues will freeze on this date.`,
+      confirmLabel: 'End Membership',
+      variant: 'danger',
+    });
+    if (!ok) return;
+
+    setLoading(true);
+    try {
+      await api.endMembership(member.id, endDate);
+      await loadMemberData(member.id);
+      onSuccess();
+    } catch (err) {
+      onError(err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -103,25 +112,22 @@ export const EditMemberModal: React.FC<EditMemberModalProps> = ({
   const hasActivePeriod = periods.some((p) => p.end_date === null);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-100">
-      <div className="w-full max-w-lg rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-2xl space-y-4">
-        <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3">
-          <div className="flex items-center gap-2">
-            <UserCheck className="h-5 w-5 text-zinc-900 dark:text-zinc-100" />
-            <div>
-              <h3 className="font-semibold text-base text-zinc-900 dark:text-zinc-100">
-                {member.name}
-              </h3>
-              <div className="text-[11px] text-zinc-500">Member #{member.id} • {hasActivePeriod ? 'Active Member' : 'Alumni / Inactive'}</div>
+    <SettleModal
+      open={!!member}
+      onClose={onClose}
+      size="lg"
+      title={
+        <div className="flex items-center gap-2">
+          <UserCheck className="h-5 w-5 text-zinc-900 dark:text-zinc-100" />
+          <div>
+            <div className="font-semibold text-base text-zinc-900 dark:text-zinc-100">
+              {member.name}
             </div>
+            <div className="text-[11px] text-zinc-500 font-normal">Member #{member.id} • {hasActivePeriod ? 'Active Member' : 'Alumni / Inactive'}</div>
           </div>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-600 dark:hover:text-zinc-200"
-          >
-            <X className="h-5 w-5" />
-          </button>
         </div>
+      }
+    >
 
         {/* Tab Switcher */}
         <div className="flex border-b border-zinc-200 dark:border-zinc-800 text-xs">
@@ -178,7 +184,7 @@ export const EditMemberModal: React.FC<EditMemberModalProps> = ({
 
             <div>
               <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                Batch / Department (optional)
+                Batch (optional)
               </label>
               <input
                 type="text"
@@ -329,7 +335,6 @@ export const EditMemberModal: React.FC<EditMemberModalProps> = ({
             </div>
           </div>
         )}
-      </div>
-    </div>
+    </SettleModal>
   );
 };
