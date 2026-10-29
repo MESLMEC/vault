@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowDownRight, ArrowUpRight, ArrowRightLeft, RotateCcw, Sparkles, AlertCircle } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, ArrowRightLeft, RotateCcw, Sparkles, AlertCircle, Loader2 } from 'lucide-react';
 import { api } from '../../services/api';
 import { Envelope, CostCenter, Member, IncomeSource, EntryKind } from '../../lib/db/types';
 import { formatTaka } from '../../lib/utils';
@@ -34,12 +34,13 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const [recordedBy, setRecordedBy] = useState('Treasurer');
 
   // Deposit specific
-  const [source, setSource] = useState<IncomeSource>('donation');
+  const [source, setSource] = useState<IncomeSource>('weekly_fee');
   const [memberId, setMemberId] = useState<string>('');
 
   // Expense / Transfer specific
   const [selectedEnvelopeId, setSelectedEnvelopeId] = useState<string>('');
   const [targetEnvelopeId, setTargetEnvelopeId] = useState<string>('');
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     setKind(initialType);
@@ -83,6 +84,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       return;
     }
 
+    setLoading(true);
     try {
       const ccId = costCenterId ? parseInt(costCenterId, 10) : null;
       const memId = memberId ? parseInt(memberId, 10) : null;
@@ -162,6 +164,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       onClose();
     } catch (err: any) {
       onError(err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -465,9 +469,11 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             </button>
             <button
               type="submit"
-              className="rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 shadow-sm"
+              disabled={loading}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Record Transaction
+              {loading && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+              <span>{loading ? 'Recording...' : 'Record Transaction'}</span>
             </button>
           </div>
         </form>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Edit3, Clock } from 'lucide-react';
+import { Edit3, Clock, Loader2 } from 'lucide-react';
 import { LedgerEntryView, LedgerLabelEdit, CostCenter } from '../../lib/db/types';
 import { api } from '../../services/api';
 import { formatDateTime } from '../../lib/utils';
@@ -26,6 +26,7 @@ export const EditLabelModal: React.FC<EditLabelModalProps> = ({
   const [costCenterId, setCostCenterId] = useState<string>(transaction.cost_center_id ? String(transaction.cost_center_id) : '');
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
   const [pastEdits, setPastEdits] = useState<LedgerLabelEdit[]>([]);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -45,6 +46,7 @@ export const EditLabelModal: React.FC<EditLabelModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoading(true);
     try {
       await api.editTransactionLabel({
         transactionId: transaction.id,
@@ -58,6 +60,8 @@ export const EditLabelModal: React.FC<EditLabelModalProps> = ({
       onClose();
     } catch (err) {
       onError(err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -166,9 +170,11 @@ export const EditLabelModal: React.FC<EditLabelModalProps> = ({
           </button>
           <button
             type="submit"
-            className="rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 shadow-sm cursor-pointer"
+            disabled={loading}
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Save Changes
+            {loading && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+            <span>{loading ? 'Saving...' : 'Save Changes'}</span>
           </button>
         </div>
       </form>

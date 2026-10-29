@@ -19,8 +19,11 @@ import {
   LedgerEntryView,
 } from '../../lib/db/types';
 import { api } from '../../services/api';
+import { UnverifiedEntryOut } from '../../services/backendApi';
 import { formatTaka, formatDate } from '../../lib/utils';
 import { useConfirmation } from '../../context/ConfirmationContext';
+
+type UnverifiedItem = UnverifiedEntryOut | (LedgerEntryView & { net_effect: number; size: number });
 
 interface ReconciliationScreenProps {
   onRefresh: () => void;
@@ -34,9 +37,7 @@ export const ReconciliationScreen: React.FC<ReconciliationScreenProps> = ({
   const { notify } = useConfirmation();
   const [status, setStatus] = useState<ReconciliationStatus | null>(null);
   const [balances, setBalances] = useState<EnvelopeBalance[]>([]);
-  const [unverified, setUnverified] = useState<
-    Array<LedgerEntryView & { net_effect: number; size: number }>
-  >([]);
+  const [unverified, setUnverified] = useState<UnverifiedItem[]>([]);
   const [pastChecks, setPastChecks] = useState<Reconciliation[]>([]);
 
   // Counted form

@@ -10,6 +10,7 @@ import {
   X,
   Layers,
   Edit2,
+  Loader2,
 } from 'lucide-react';
 import { CostCenterSummary, CostCenter, EnvelopeBalance } from '../../lib/db/types';
 import { api } from '../../services/api';
@@ -43,7 +44,12 @@ export const CostCentersScreen: React.FC<CostCentersScreenProps> = ({
   // Edit / Rename Modal State
   const [editCC, setEditCC] = useState<CostCenterSummary | null>(null);
   const [editCCName, setEditCCName] = useState('');
+  const [editCCKind, setEditCCKind] = useState<CostCenter['kind']>('event');
   const [editCCStatus, setEditCCStatus] = useState<CostCenter['status']>('active');
+
+  const [isSweeping, setIsSweeping] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
 
   const loadData = async () => {
     try {
@@ -70,6 +76,7 @@ export const CostCentersScreen: React.FC<CostCentersScreenProps> = ({
     e.preventDefault();
     if (!sweepTarget) return;
 
+    setIsSweeping(true);
     try {
       const envId = parseInt(sweepEnvelopeId, 10);
       await api.sweepLeftover({
@@ -89,11 +96,14 @@ export const CostCentersScreen: React.FC<CostCentersScreenProps> = ({
       onRefresh();
     } catch (err) {
       onError(err);
+    } finally {
+      setIsSweeping(false);
     }
   };
 
   const handleCreateCostCenter = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsCreating(true);
     try {
       await api.createCostCenter(newName, newKind);
       setNewName('');
@@ -102,15 +112,21 @@ export const CostCentersScreen: React.FC<CostCentersScreenProps> = ({
       onRefresh();
     } catch (err) {
       onError(err);
+    } finally {
+      setIsCreating(false);
     }
   };
 
   const handleEditCC = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editCC) return;
+    setIsEditing(true);
     try {
       if (editCCName.trim() && editCCName.trim() !== editCC.name) {
         await api.renameCostCenter(editCC.cost_center_id, editCCName.trim());
+      }
+      if (editCCKind !== editCC.kind) {
+        await api.updateCostCenterKind(editCC.cost_center_id, editCCKind);
       }
       if (editCCStatus !== editCC.status) {
         await api.updateCostCenterStatus(editCC.cost_center_id, editCCStatus);
@@ -120,6 +136,8 @@ export const CostCentersScreen: React.FC<CostCentersScreenProps> = ({
       onRefresh();
     } catch (err) {
       onError(err);
+    } finally {
+      setIsEditing(false);
     }
   };
 
@@ -183,10 +201,11 @@ export const CostCentersScreen: React.FC<CostCentersScreenProps> = ({
                     onClick={() => {
                       setEditCC(cc);
                       setEditCCName(cc.name);
+                      setEditCCKind(cc.kind);
                       setEditCCStatus(cc.status);
                     }}
                     className="rounded p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                    title="Rename or change status"
+                    title="Edit cost center"
                   >
                     <Edit2 className="h-3.5 w-3.5" />
                   </button>
@@ -341,9 +360,11 @@ export const CostCentersScreen: React.FC<CostCentersScreenProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 text-xs font-medium shadow-sm"
+                  disabled={isSweeping}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 text-xs font-medium shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Confirm Sweep to Pool
+                  {isSweeping && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+                  <span>{isSweeping ? 'Sweeping...' : 'Confirm Sweep to Pool'}</span>
                 </button>
               </div>
             </form>
@@ -403,9 +424,11 @@ export const CostCentersScreen: React.FC<CostCentersScreenProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200"
+                  disabled={isCreating}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Create Cost Center
+                  {isCreating && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+                  <span>{isCreating ? 'Creating...' : 'Create Cost Center'}</span>
                 </button>
               </div>
             </form>
@@ -447,6 +470,22 @@ export const CostCentersScreen: React.FC<CostCentersScreenProps> = ({
 
               <div>
                 <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                  Category / Kind
+                </label>
+                <select
+                  value={editCCKind}
+                  onChange={(e) => setEditCCKind(e.target.value as any)}
+                  className="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 outline-none focus:border-zinc-400"
+                >
+                  <option value="event">Event (Bootcamp, Workshop)</option>
+                  <option value="member_project">Member Project</option>
+                  <option value="lab_project">Lab Project (Internal)</option>
+                  <option value="competition">Competition (Olympiad, Hackathon)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
                   Lifecycle Status
                 </label>
                 <select
@@ -474,9 +513,11 @@ export const CostCentersScreen: React.FC<CostCentersScreenProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200"
+                  disabled={isEditing}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Save Changes
+                  {isEditing && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+                  <span>{isEditing ? 'Saving...' : 'Save Changes'}</span>
                 </button>
               </div>
             </form>

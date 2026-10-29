@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UserCheck, Calendar, Clock, Plus, ShieldAlert, History, Edit3 } from 'lucide-react';
+import { UserCheck, Calendar, Clock, Plus, ShieldAlert, History, Edit3, Loader2 } from 'lucide-react';
 import { api } from '../../services/api';
 import { Member, MembershipPeriod, MemberAdjustment } from '../../lib/db/types';
 import { formatTaka } from '../../lib/utils';
@@ -219,9 +219,10 @@ export const EditMemberModal: React.FC<EditMemberModalProps> = ({
               <button
                 type="submit"
                 disabled={loading}
-                className="rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 disabled:opacity-50"
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {loading ? 'Saving...' : 'Update Member Details'}
+                {loading && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+                <span>{loading ? 'Saving...' : 'Update Member Details'}</span>
               </button>
             </div>
           </form>
@@ -272,9 +273,10 @@ export const EditMemberModal: React.FC<EditMemberModalProps> = ({
                     type="button"
                     disabled={loading}
                     onClick={handleEndPeriod}
-                    className="rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-3 py-1.5 text-xs font-medium text-amber-800 dark:text-amber-300 hover:bg-amber-100"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-3 py-1.5 text-xs font-medium text-amber-800 dark:text-amber-300 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    End Membership
+                    {loading && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+                    <span>{loading ? 'Ending...' : 'End Membership'}</span>
                   </button>
                 </div>
               </div>
@@ -294,9 +296,10 @@ export const EditMemberModal: React.FC<EditMemberModalProps> = ({
                     type="button"
                     disabled={loading}
                     onClick={handleStartPeriod}
-                    className="rounded-lg bg-zinc-900 dark:bg-zinc-100 px-3 py-1.5 text-xs font-medium text-white dark:text-zinc-900"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 dark:bg-zinc-100 px-3 py-1.5 text-xs font-medium text-white dark:text-zinc-900 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Start Period
+                    {loading && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+                    <span>{loading ? 'Starting...' : 'Start Period'}</span>
                   </button>
                 </div>
               </div>

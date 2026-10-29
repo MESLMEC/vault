@@ -319,7 +319,7 @@ export const AppShell: React.FC<AppShellProps> = ({
         <div className="font-semibold text-sm leading-tight text-zinc-900 dark:text-zinc-100">
           MESL Vault
         </div>
-        <div className="text-[11px] text-zinc-500 truncate">Electronics Lab Finance</div>
+        <div className="text-[11px] text-zinc-500 truncate">Secure?</div>
       </div>
     </div>
   );

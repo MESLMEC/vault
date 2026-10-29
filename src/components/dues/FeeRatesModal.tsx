@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, Plus, Calendar, Clock, CheckCircle, AlertTriangle } from 'lucide-react';
+import { TrendingUp, Plus, Calendar, Clock, CheckCircle, AlertTriangle, Info, Loader2 } from 'lucide-react';
 import { api } from '../../services/api';
-import { FeeRate } from '../../lib/db/types';
-import { formatTaka, sundayOnOrBefore, toLocalDateStr } from '../../lib/utils';
+import { FeeRate, Tenure } from '../../lib/db/types';
+import { formatTaka, sundayOnOrBefore, sundayOnOrAfter, toLocalDateStr, isSunday } from '../../lib/utils';
 import { SettleModal } from '../ui/SettleModal';
 
 interface FeeRatesModalProps {
@@ -19,6 +19,7 @@ export const FeeRatesModal: React.FC<FeeRatesModalProps> = ({
   onError,
 }) => {
   const [rates, setRates] = useState<FeeRate[]>([]);
+  const [openTenure, setOpenTenure] = useState<Tenure | null>(null);
   const [effectiveFrom, setEffectiveFrom] = useState(
     sundayOnOrBefore(toLocalDateStr(new Date()))
   );
@@ -28,9 +29,17 @@ export const FeeRatesModal: React.FC<FeeRatesModalProps> = ({
 
   const loadRates = async () => {
     try {
-      const data = await api.getFeeRates();
-      // Sort newest first
+      const [data, tenure] = await Promise.all([api.getFeeRates(), api.getOpenTenure()]);
       setRates([...data].sort((a, b) => b.effective_from.localeCompare(a.effective_from)));
+      setOpenTenure(tenure);
+
+      // If no rate exists yet, default to the tenure's opening Sunday
+      if (data.length === 0 && tenure?.opened_on) {
+        const tenureSunday = isSunday(tenure.opened_on)
+          ? tenure.opened_on
+          : sundayOnOrAfter(tenure.opened_on);
+        setEffectiveFrom(tenureSunday);
+      }
     } catch (e) {
       console.error(e);
     }
@@ -46,6 +55,9 @@ export const FeeRatesModal: React.FC<FeeRatesModalProps> = ({
 
   if (!isOpen) return null;
 
+  const isBeforeTenure = !!(openTenure && effectiveFrom && effectiveFrom < openTenure.opened_on);
+  const isDaySunday = effectiveFrom ? isSunday(effectiveFrom) : false;
+
   const handleAddRate = async (e: React.FormEvent) => {
     e.preventDefault();
     const amt = parseInt(amount, 10);
@@ -56,6 +68,23 @@ export const FeeRatesModal: React.FC<FeeRatesModalProps> = ({
       });
       return;
     }
+
+    if (openTenure && effectiveFrom < openTenure.opened_on) {
+      setError({
+        reason: 'Effective Date Precedes Tenure Start',
+        remediation: `The active tenure opened on ${openTenure.opened_on}. Fee rates cannot be set before the tenure started. Please select ${openTenure.opened_on} or a later Sunday.`,
+      });
+      return;
+    }
+
+    if (!isDaySunday) {
+      setError({
+        reason: 'Invalid Effective Date',
+        remediation: 'Weekly fee rates must take effect on a Sunday.',
+      });
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
@@ -86,6 +115,21 @@ export const FeeRatesModal: React.FC<FeeRatesModalProps> = ({
         </div>
       }
     >
+      <div className="space-y-4">
+        {/* Active Tenure Banner */}
+        {openTenure && (
+          <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-zinc-100/80 dark:bg-zinc-800/60 border border-zinc-200/60 dark:border-zinc-700/60 text-xs">
+            <div className="flex items-center gap-1.5 font-medium text-zinc-800 dark:text-zinc-200">
+              <Calendar className="h-3.5 w-3.5 text-zinc-500" />
+              <span>
+                Active Tenure: <strong className="text-zinc-900 dark:text-zinc-100">{openTenure.name}</strong>
+              </span>
+            </div>
+            <span className="text-[11px] font-mono text-zinc-500 dark:text-zinc-400">
+              Opened on: <strong className="text-zinc-700 dark:text-zinc-300">{openTenure.opened_on}</strong>
+            </span>
+          </div>
+        )}
 
         {/* Existing Rates History */}
         <div className="space-y-2">
@@ -151,6 +195,7 @@ export const FeeRatesModal: React.FC<FeeRatesModalProps> = ({
               <input
                 type="date"
                 required
+                min={openTenure?.opened_on || undefined}
                 value={effectiveFrom}
                 onChange={(e) => setEffectiveFrom(e.target.value)}
                 className="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs text-zinc-900 dark:text-zinc-100 outline-none focus:border-zinc-400"
@@ -173,12 +218,49 @@ export const FeeRatesModal: React.FC<FeeRatesModalProps> = ({
             </div>
           </div>
 
+          {/* Real-time Warning if Date Precedes Tenure Start */}
+          {isBeforeTenure && (
+            <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs animate-in fade-in">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+              <div>
+                <span className="font-semibold">Cannot start before tenure opening:</span>{' '}
+                This tenure opened on <strong>{openTenure?.opened_on}</strong>. Fee rates cannot precede the tenure start. Please select <strong>{openTenure?.opened_on}</strong> or a subsequent Sunday.
+              </div>
+            </div>
+          )}
+
+          {/* Sunday Helper with Snap Button */}
+          {!isBeforeTenure && !isDaySunday && effectiveFrom && (
+            <div className="flex items-center justify-between p-2 rounded-lg bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800 text-sky-900 dark:text-sky-200 text-xs">
+              <div className="flex items-center gap-1.5">
+                <Info className="h-3.5 w-3.5 text-sky-600 dark:text-sky-400" />
+                <span>Effective date must be a Sunday.</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEffectiveFrom(sundayOnOrBefore(effectiveFrom))}
+                className="text-[11px] font-semibold underline text-sky-700 dark:text-sky-300 hover:text-sky-900 dark:hover:text-sky-100 cursor-pointer"
+              >
+                Snap to Sunday ({sundayOnOrBefore(effectiveFrom)})
+              </button>
+            </div>
+          )}
+
           <button
             type="submit"
-            disabled={loading}
-            className="w-full rounded-lg bg-zinc-900 dark:bg-zinc-100 px-3 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors disabled:opacity-50"
+            disabled={loading || isBeforeTenure || !isDaySunday}
+            className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-zinc-900 dark:bg-zinc-100 px-3 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
           >
-            {loading ? 'Recording...' : 'Save New Fee Rate'}
+            {loading && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+            <span>
+              {loading
+                ? 'Recording Fee Rate...'
+                : isBeforeTenure
+                ? `Cannot Set Before Tenure Starts (${openTenure?.opened_on})`
+                : !isDaySunday
+                ? 'Must Be A Sunday'
+                : 'Save New Fee Rate'}
+            </span>
           </button>
         </form>
 
@@ -191,6 +273,7 @@ export const FeeRatesModal: React.FC<FeeRatesModalProps> = ({
             Done
           </button>
         </div>
+      </div>
     </SettleModal>
   );
 };

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, AlertTriangle, Plus } from 'lucide-react';
+import { Calendar, AlertTriangle, Plus, Loader2 } from 'lucide-react';
 import { ShutdownEvent } from '../../lib/db/types';
 import { api } from '../../services/api';
 import { sundayOnOrBefore, formatDate } from '../../lib/utils';
@@ -25,6 +25,7 @@ export const ShutdownCalendarModal: React.FC<ShutdownCalendarModalProps> = ({
   const [reason, setReason] = useState('');
   const [recordedBy, setRecordedBy] = useState('Treasurer');
   const [error, setError] = useState<{ reason: string; remediation?: string } | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const loadEvents = async () => {
     try {
@@ -47,6 +48,7 @@ export const ShutdownCalendarModal: React.FC<ShutdownCalendarModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setLoading(true);
     try {
       await api.setShutdown({
         fromWeek,
@@ -64,6 +66,8 @@ export const ShutdownCalendarModal: React.FC<ShutdownCalendarModalProps> = ({
         remediation: err?.remediation,
       });
       onError(err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -151,10 +155,11 @@ export const ShutdownCalendarModal: React.FC<ShutdownCalendarModalProps> = ({
           <div className="flex justify-end pt-1">
             <button
               type="submit"
-              className="flex items-center gap-1.5 rounded bg-zinc-900 dark:bg-zinc-100 px-3 py-1.5 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200"
+              disabled={loading}
+              className="flex items-center gap-1.5 rounded bg-zinc-900 dark:bg-zinc-100 px-3 py-1.5 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Plus className="h-3 w-3" />
-              <span>Mark Shutdown</span>
+              {loading ? <Loader2 className="h-3 w-3 animate-spin shrink-0" /> : <Plus className="h-3 w-3" />}
+              <span>{loading ? 'Saving...' : 'Mark Shutdown'}</span>
             </button>
           </div>
         </form>

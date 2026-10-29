@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   X,
   ShieldAlert,
+  Loader2,
 } from 'lucide-react';
 import {
   Asset,
@@ -59,6 +60,9 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
   const [newAssetNote, setNewAssetNote] = useState('');
   const [newAssetInitialQty, setNewAssetInitialQty] = useState('1');
 
+  const [isCreatingAsset, setIsCreatingAsset] = useState(false);
+  const [isRecordingEvent, setIsRecordingEvent] = useState(false);
+
   const loadData = async () => {
     try {
       const [ast, st, hld, queue, mems, ccs] = await Promise.all([
@@ -86,6 +90,7 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
 
   const handleCreateAsset = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsCreatingAsset(true);
     try {
       const created = await api.createAsset({
         name: newAssetName.trim(),
@@ -115,6 +120,8 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
       onRefresh();
     } catch (err) {
       onError(err);
+    } finally {
+      setIsCreatingAsset(false);
     }
   };
 
@@ -122,6 +129,7 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
     e.preventDefault();
     if (!actionAsset) return;
 
+    setIsRecordingEvent(true);
     try {
       const qty = parseInt(actionQuantity, 10);
       const mId = actionMemberId ? parseInt(actionMemberId, 10) : null;
@@ -143,6 +151,8 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
       onRefresh();
     } catch (err) {
       onError(err);
+    } finally {
+      setIsRecordingEvent(false);
     }
   };
 
@@ -585,9 +595,11 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 shadow-sm"
+                  disabled={isRecordingEvent}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Save Movement
+                  {isRecordingEvent && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+                  <span>{isRecordingEvent ? 'Saving...' : 'Save Movement'}</span>
                 </button>
               </div>
             </form>
@@ -704,9 +716,11 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200"
+                  disabled={isCreatingAsset}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Add Equipment
+                  {isCreatingAsset && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+                  <span>{isCreatingAsset ? 'Adding...' : 'Add Equipment'}</span>
                 </button>
               </div>
             </form>

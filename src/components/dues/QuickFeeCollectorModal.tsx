@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, ArrowDownRight, CheckCircle2, AlertTriangle, Share2 } from 'lucide-react';
+import { Users, ArrowDownRight, CheckCircle2, AlertTriangle, Share2, Loader2 } from 'lucide-react';
 import { Member, MemberStanding, LedgerEntryView } from '../../lib/db/types';
 import { api } from '../../services/api';
 import { formatTaka } from '../../lib/utils';
@@ -30,9 +30,14 @@ export const QuickFeeCollectorModal: React.FC<QuickFeeCollectorModalProps> = ({
   const [recordedBy, setRecordedBy] = useState('Treasurer');
   const [error, setError] = useState<{ reason: string; remediation?: string } | null>(null);
   const [receiptTx, setReceiptTx] = useState<LedgerEntryView | null>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setReceiptTx(null);
+      setError(null);
+      return;
+    }
     setError(null);
     const load = async () => {
       try {
@@ -72,6 +77,7 @@ export const QuickFeeCollectorModal: React.FC<QuickFeeCollectorModalProps> = ({
     if (!memId) return;
 
     setError(null);
+    setLoading(true);
     try {
       const pool = (await api.getEnvelopes()).find((e) => e.is_pool);
       if (!pool) throw new Error('General Pool envelope not found');
@@ -104,24 +110,15 @@ export const QuickFeeCollectorModal: React.FC<QuickFeeCollectorModalProps> = ({
         remediation: err?.remediation,
       });
       onError(err);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <>
-      <FeeReceiptModal
-        isOpen={!!receiptTx}
-        onClose={() => {
-          setReceiptTx(null);
-          onClose();
-        }}
-        transaction={receiptTx}
-        member={members.find((m) => m.id === parseInt(selectedMemberId, 10))}
-        standing={currentMemberStanding}
-      />
-
       <SettleModal
-        open={isOpen}
+        open={isOpen && !receiptTx}
         onClose={onClose}
         size="md"
         title={
@@ -296,13 +293,26 @@ export const QuickFeeCollectorModal: React.FC<QuickFeeCollectorModalProps> = ({
             </button>
             <button
               type="submit"
-              className="rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 shadow-sm"
+              disabled={loading}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Record Fee Payment
+              {loading && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+              <span>{loading ? 'Recording Payment...' : 'Record Fee Payment'}</span>
             </button>
           </div>
         </form>
       </SettleModal>
+
+      <FeeReceiptModal
+        isOpen={!!receiptTx}
+        onClose={() => {
+          setReceiptTx(null);
+          onClose();
+        }}
+        transaction={receiptTx}
+        member={members.find((m) => m.id === parseInt(selectedMemberId, 10))}
+        standing={currentMemberStanding}
+      />
     </>
   );
 };

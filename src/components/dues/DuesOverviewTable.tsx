@@ -14,6 +14,7 @@ import {
   Edit2,
   Share2,
   Receipt,
+  Loader2,
 } from 'lucide-react';
 import { MemberStanding, Member, LedgerEntryView } from '../../lib/db/types';
 import { formatTaka, formatDate } from '../../lib/utils';
@@ -63,9 +64,11 @@ export const DuesOverviewTable: React.FC<DuesOverviewTableProps> = ({
   const [newMemberBatch, setNewMemberBatch] = useState('');
   const [newMemberStart, setNewMemberStart] = useState(new Date().toISOString().split('T')[0]);
   const [newMemberNote, setNewMemberNote] = useState('');
+  const [isAddingMember, setIsAddingMember] = useState(false);
 
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsAddingMember(true);
     try {
       await api.createMember(newMemberName, newMemberStart, newMemberBatch, newMemberNote);
       setNewMemberName('');
@@ -75,6 +78,8 @@ export const DuesOverviewTable: React.FC<DuesOverviewTableProps> = ({
       onRefresh();
     } catch (err) {
       onError(err);
+    } finally {
+      setIsAddingMember(false);
     }
   };
 
@@ -254,7 +259,7 @@ export const DuesOverviewTable: React.FC<DuesOverviewTableProps> = ({
           <div className="text-xs text-zinc-500 font-medium">Weekly Rate</div>
           <div className="mt-1 flex items-baseline justify-between">
             <span className="text-2xl font-bold font-mono text-zinc-900 dark:text-zinc-100">
-              ৳50 / wk
+              ৳20/ wk
             </span>
             <span className="text-xs text-zinc-500">Sundays only</span>
           </div>
@@ -486,7 +491,7 @@ export const DuesOverviewTable: React.FC<DuesOverviewTableProps> = ({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                    Batch / Dept (optional)
+                    Batch (optional)
                   </label>
                   <input
                     type="text"
@@ -534,9 +539,11 @@ export const DuesOverviewTable: React.FC<DuesOverviewTableProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200"
+                  disabled={isAddingMember}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Add Member
+                  {isAddingMember && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+                  <span>{isAddingMember ? 'Adding...' : 'Add Member'}</span>
                 </button>
               </div>
             </form>

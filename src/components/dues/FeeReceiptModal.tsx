@@ -405,6 +405,8 @@ export const FeeReceiptModal: React.FC<FeeReceiptModalProps> = ({
       open={isOpen}
       onClose={onClose}
       hideCloseButton={true}
+      containerClassName="z-[70]"
+      zIndex={70}
       className="p-0 border-none bg-transparent shadow-none max-w-md"
     >
       <PaymentStatus

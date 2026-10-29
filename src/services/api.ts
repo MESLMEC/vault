@@ -24,6 +24,8 @@ import {
   EntryKind,
   AdjustmentKind,
   Asset,
+  AssetMode,
+  AssetOwner,
   AssetEvent,
   AssetEventKind,
   AcquireSource,
@@ -40,21 +42,44 @@ import {
   MembershipPeriodOut,
   AdjustmentOut,
   StandingOut,
+  AssetOut,
+  AssetStateOut,
+  WhoHasWhatOut,
+  AssetActivityOut,
+  CostCenterSummaryOut,
+  ReconciliationStatusOut,
+  UnverifiedEntryOut,
+  DifferenceSuspectOut,
+  CloseTenureOut,
+  TenureOut,
+  AssetSnapshotOut,
+  HoldingSnapshotOut,
+  MemberSnapshotOut,
 } from './backendApi';
 
-// Initialize singleton engine with demo transactions so charts and analytics are live
+// Initialize singleton engine with clean state
 let engineInstance: FinanceEngine | null = null;
 
 export function getEngine(): FinanceEngine {
   if (!engineInstance) {
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.removeItem('mesl_vault_state_v4');
+        localStorage.removeItem('mesl_vault_clean_v2');
+        localStorage.removeItem('mesl_lab_finance_v1');
+      } catch {}
+    }
     const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
     if (!stored) {
-      engineInstance = new FinanceEngine(getSeedData());
+      engineInstance = new FinanceEngine(getCleanInitialData());
       engineInstance.saveToStorage();
     } else {
       engineInstance = new FinanceEngine();
-      if (engineInstance.getRawState().ledger_transactions.length === 0) {
-        engineInstance.loadRawState(getSeedData());
+      const active = engineInstance.getTenures().find((t) => t.closed_on === null);
+      if (active && (active.opened_on === '2026-09-20' || active.opened_on === '2026-10-20')) {
+        active.opened_on = '2025-04-13';
+        active.name = '2025-2026';
+        engineInstance.saveToStorage();
       }
     }
   }
@@ -126,13 +151,52 @@ export const api = {
   },
 
   // -----------------------------------------------------------------------------------
-  // Tenures (Backend Phase 11 - Not yet in openapi.json, handled by Engine)
+  // Tenures (Backend Phase 11 & openapi.json)
   // -----------------------------------------------------------------------------------
   async getTenures(): Promise<Tenure[]> {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        const tenures = await backendApi.getTenures();
+        if (tenures && tenures.length > 0) {
+          const engine = getEngine();
+          const activeBackend = tenures.find((t) => t.closed_on === null);
+          const activeEngine = engine.getTenures().find((t) => t.closed_on === null);
+          if (activeBackend && activeEngine && activeEngine.opened_on !== activeBackend.opened_on) {
+            activeEngine.id = activeBackend.id;
+            activeEngine.name = activeBackend.name;
+            activeEngine.opened_on = activeBackend.opened_on;
+            engine.saveToStorage();
+          }
+        }
+        return tenures as Tenure[];
+      } catch (err) {
+        if (authStorage.getMode() === 'backend') throw err;
+        console.warn('Backend getTenures failed, falling back to engine:', err);
+      }
+    }
     return getEngine().getTenures();
   },
 
   async getOpenTenure(): Promise<Tenure> {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        const openTenure = await backendApi.getOpenTenure();
+        if (openTenure) {
+          const engine = getEngine();
+          const activeEngine = engine.getTenures().find((t) => t.closed_on === null);
+          if (activeEngine && activeEngine.opened_on !== openTenure.opened_on) {
+            activeEngine.id = openTenure.id;
+            activeEngine.name = openTenure.name;
+            activeEngine.opened_on = openTenure.opened_on;
+            engine.saveToStorage();
+          }
+        }
+        return openTenure as Tenure;
+      } catch (err) {
+        if (authStorage.getMode() === 'backend') throw err;
+        console.warn('Backend getOpenTenure failed, falling back to engine:', err);
+      }
+    }
     return getEngine().getOpenTenure();
   },
 
@@ -141,7 +205,62 @@ export const api = {
     by: string;
     nextName: string;
   }): Promise<{ newTenureId: number; checksum: string }> {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        const out = await backendApi.closeTenure({
+          close_on: params.closeOn,
+          next_name: params.nextName,
+        });
+        const engineResult = await getEngine().closeTenure(params);
+        return {
+          newTenureId: out.id || engineResult.newTenureId,
+          checksum: engineResult.checksum,
+        };
+      } catch (err) {
+        if (authStorage.getMode() === 'backend') throw err;
+        console.warn('Backend closeTenure failed, falling back to engine:', err);
+      }
+    }
     return await getEngine().closeTenure(params);
+  },
+
+  async getTenureAssetSnapshots(tenureId: number): Promise<AssetSnapshotOut[]> {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        return await backendApi.getTenureAssetSnapshots(tenureId);
+      } catch (err) {
+        console.warn('Backend getTenureAssetSnapshots failed:', err);
+      }
+    }
+    return getEngine()
+      .getRawState()
+      .tenure_asset_snapshots.filter((s) => s.tenure_id === tenureId) as any;
+  },
+
+  async getTenureHoldingSnapshots(tenureId: number): Promise<HoldingSnapshotOut[]> {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        return await backendApi.getTenureHoldingSnapshots(tenureId);
+      } catch (err) {
+        console.warn('Backend getTenureHoldingSnapshots failed:', err);
+      }
+    }
+    return getEngine()
+      .getRawState()
+      .tenure_holding_snapshots.filter((s) => s.tenure_id === tenureId) as any;
+  },
+
+  async getTenureMemberSnapshots(tenureId: number): Promise<MemberSnapshotOut[]> {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        return await backendApi.getTenureMemberSnapshots(tenureId);
+      } catch (err) {
+        console.warn('Backend getTenureMemberSnapshots failed:', err);
+      }
+    }
+    return getEngine()
+      .getRawState()
+      .tenure_member_snapshots.filter((s) => s.tenure_id === tenureId) as any;
   },
 
   // -----------------------------------------------------------------------------------
@@ -167,7 +286,35 @@ export const api = {
   },
 
   async getEnvelopeBalances(): Promise<EnvelopeBalance[]> {
-    // Envelope balances derived from engine or sync
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        const [envelopes, context] = await Promise.all([
+          backendApi.getEnvelopes(),
+          backendApi.getAllocationContext(),
+        ]);
+        let suggestions: Array<{ envelope_id: number; balance: number }> = [];
+        try {
+          suggestions = await backendApi.getAllocationSuggestion({ amount: 1 });
+        } catch {
+          // ignore draft allocation errors if empty/unavailable
+        }
+        const balMap = new Map<number, number>();
+        for (const s of suggestions) {
+          balMap.set(s.envelope_id, s.balance);
+        }
+        return envelopes.map((env) => ({
+          id: env.id,
+          name: env.name,
+          balance: env.is_pool ? context.pool_balance : (balMap.get(env.id) ?? 0),
+          target_cap: env.target_cap,
+          alloc_priority: env.alloc_priority,
+          is_pool: env.is_pool,
+          active: env.active,
+        }));
+      } catch (err) {
+        console.warn('Backend getEnvelopeBalances failed, falling back to engine:', err);
+      }
+    }
     return getEngine().getEnvelopeBalances();
   },
 
@@ -348,7 +495,38 @@ export const api = {
     getEngine().updateCostCenterStatus(id, status);
   },
 
-  async getCostCenterSummary(): Promise<CostCenterSummary[]> {
+  async updateCostCenterKind(id: number, kind: CostCenter['kind']): Promise<CostCenterOut> {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        const res = await backendApi.setCostCenterKind(id, kind);
+        getEngine().updateCostCenterKind(id, kind);
+        return res;
+      } catch (err) {
+        if (authStorage.getMode() === 'backend') throw err;
+        console.warn('Backend updateCostCenterKind failed, updating locally:', err);
+      }
+    }
+    getEngine().updateCostCenterKind(id, kind);
+    const found = getEngine().getCostCenters().find((c) => c.id === id);
+    return { id, name: found?.name || '', kind, status: found?.status || 'active' };
+  },
+
+  async getCostCenterSummary(costCenterId?: number): Promise<CostCenterSummary[]> {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        if (costCenterId != null) {
+          const s = await backendApi.getCostCenterSummary(costCenterId);
+          return [s as CostCenterSummary];
+        }
+        const ccs = await backendApi.getCostCenters();
+        const summaries = await Promise.all(
+          ccs.map((cc) => backendApi.getCostCenterSummary(cc.id))
+        );
+        return summaries as CostCenterSummary[];
+      } catch (err) {
+        console.warn('Backend getCostCenterSummary failed, falling back to engine:', err);
+      }
+    }
     return getEngine().getCostCenterSummary();
   },
 
@@ -359,6 +537,20 @@ export const api = {
     date: string;
     note: string;
   }): Promise<LedgerTransaction> {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        await backendApi.recordSweep({
+          cost_center_id: params.costCenterId,
+          from_envelope_id: params.fromEnvelopeId,
+          note: params.note,
+          occurred_on: params.date,
+        });
+        return getEngine().sweepLeftover(params);
+      } catch (err) {
+        if (authStorage.getMode() === 'backend') throw err;
+        console.warn('Backend sweepLeftover failed, falling back to engine:', err);
+      }
+    }
     return getEngine().sweepLeftover(params);
   },
 
@@ -369,13 +561,15 @@ export const api = {
     if (this.isBackendMode() && authStorage.getToken()) {
       try {
         const mems = await backendApi.getMembers();
-        return mems.map((m) => ({
+        const mapped: Member[] = mems.map((m) => ({
           id: m.id,
           name: m.name,
           batch: m.batch,
           note: m.note,
           created_at: new Date().toISOString(),
         }));
+        getEngine().syncMembers(mapped);
+        return mapped;
       } catch (err) {
         console.warn('Backend getMembers failed, falling back to engine:', err);
       }
@@ -395,14 +589,15 @@ export const api = {
             console.warn('Start period during member create failed:', pErr);
           }
         }
-        getEngine().createMember(name, startDate, batch, note);
-        return {
+        const createdMem: Member = {
           id: res.id,
           name: res.name,
           batch: res.batch,
           note: res.note,
           created_at: new Date().toISOString(),
         };
+        getEngine().syncMembers([createdMem]);
+        return createdMem;
       } catch (err) {
         if (authStorage.getMode() === 'backend') throw err;
         console.warn('Backend createMember failed:', err);
@@ -588,7 +783,11 @@ export const api = {
     if (this.isBackendMode() && authStorage.getToken()) {
       try {
         const res = await backendApi.addFeeRate({ effective_from: effectiveFrom, amount });
-        getEngine().addFeeRate(effectiveFrom, amount, recordedBy);
+        try {
+          getEngine().addFeeRate(effectiveFrom, amount, recordedBy);
+        } catch (engineErr) {
+          console.warn('Engine addFeeRate local mirror notice:', engineErr);
+        }
         return {
           id: res.id,
           effective_from: res.effective_from,
@@ -664,10 +863,63 @@ export const api = {
   // Ledger & Transactions (Backend Phase 6, 7 & openapi.json)
   // -----------------------------------------------------------------------------------
   async getEntriesCurrent(): Promise<LedgerEntryView[]> {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        const [entries, members, ccs, envelopes, rawLines] = await Promise.all([
+          backendApi.getEntries(),
+          this.getMembers(),
+          this.getCostCenters(),
+          this.getEnvelopes(),
+          backendApi.getLedgerLines().catch(() => []),
+        ]);
+        const memberMap = new Map(members.map((m) => [m.id, m.name]));
+        const ccMap = new Map(ccs.map((c) => [c.id, c.name]));
+        const pool = envelopes.find((e) => e.is_pool) || envelopes[0];
+
+        const linesMap = new Map<number, Array<{ id: number; transaction_id: number; envelope_id: number; amount: number }>>();
+        for (const l of rawLines) {
+          const list = linesMap.get(l.transaction_id) || [];
+          list.push(l);
+          linesMap.set(l.transaction_id, list);
+        }
+
+        return entries.map((e) => {
+          const lines = linesMap.get(e.id) || [
+            { id: e.id, transaction_id: e.id, envelope_id: pool?.id || 1, amount: 0 },
+          ];
+          return {
+            id: e.id,
+            tenure_id: e.tenure_id,
+            kind: e.kind,
+            occurred_on: e.occurred_on,
+            recorded_at: e.recorded_at,
+            recorded_by: e.recorded_by,
+            note: e.note,
+            tag: e.tag,
+            cost_center_id: e.cost_center_id,
+            source: e.source,
+            member_id: e.member_id,
+            reverses_id: null,
+            replaces_id: e.corrected_from,
+            lines,
+            is_voided: false,
+            corrected_from: e.corrected_from,
+            cost_center_name: e.cost_center_id ? ccMap.get(e.cost_center_id) : undefined,
+            member_name: e.member_id ? memberMap.get(e.member_id) : undefined,
+            source_label: e.source ? e.source.replace('_', ' ') : undefined,
+          };
+        }).sort((a, b) => b.id - a.id);
+      } catch (err) {
+        console.warn('Backend getEntries failed, falling back to engine:', err);
+      }
+    }
     return getEngine().getEntriesCurrent();
   },
 
   async getAllTransactions(): Promise<LedgerEntryView[]> {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      return this.getEntriesCurrent();
+    }
     return getEngine().getLedgerTransactions();
   },
 
@@ -696,7 +948,7 @@ export const api = {
           const line = params.lines[0];
           await backendApi.recordDeposit({
             amount: Math.abs(line?.amount || 0),
-            envelope_id: line?.envelope_id || 1,
+            envelope_id: params.source === 'weekly_fee' ? undefined : (line?.envelope_id || undefined),
             occurred_on: params.occurred_on,
             cost_center_id: params.cost_center_id,
             member_id: params.member_id,
@@ -846,6 +1098,23 @@ export const api = {
     amount: number,
     shares?: Record<string, number>
   ): Promise<AllocationSuggestionRow[]> {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        const rows = await backendApi.getAllocationSuggestion({ amount, shares });
+        return rows.map((r) => ({
+          envelope_id: r.envelope_id,
+          envelope_name: r.envelope_name,
+          balance: r.balance,
+          target_cap: r.target_cap,
+          alloc_priority: r.alloc_priority,
+          gap: r.gap,
+          phase: r.phase as any,
+          suggested: r.suggested,
+        }));
+      } catch (err) {
+        console.warn('Backend getAllocationSuggestion failed:', err);
+      }
+    }
     return getEngine().getAllocationSuggestion(amount, shares);
   },
 
@@ -855,25 +1124,112 @@ export const api = {
     note: string;
     amounts: Record<number, number>;
   }): Promise<LedgerTransaction> {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        const strAmounts: Record<string, number> = {};
+        for (const [k, v] of Object.entries(params.amounts)) {
+          if (v > 0) strAmounts[k] = v;
+        }
+        await backendApi.confirmAllocation({
+          amounts: strAmounts,
+          note: params.note,
+          occurred_on: params.date,
+        });
+        return getEngine().allocate(params);
+      } catch (err) {
+        if (authStorage.getMode() === 'backend') throw err;
+        console.warn('Backend allocate failed:', err);
+      }
+    }
     return getEngine().allocate(params);
   },
 
   // -----------------------------------------------------------------------------------
-  // Assets & Equipment (Backend Phase 9 - Not yet in openapi.json, handled by Engine)
+  // Assets & Equipment (Backend Phase 9 & openapi.json)
   // -----------------------------------------------------------------------------------
   async getAssets(): Promise<Asset[]> {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        const assets = await backendApi.getAssets();
+        return assets.map((a) => ({
+          id: a.id,
+          name: a.name,
+          mode: a.mode as Asset['mode'],
+          ownership: a.ownership as Asset['ownership'],
+          tag: a.tag,
+          note: a.note,
+          created_at: new Date().toISOString(),
+        }));
+      } catch (err) {
+        console.warn('Backend getAssets failed:', err);
+      }
+    }
     return getEngine().getAssets();
   },
 
   async getAssetState(asOfDate?: string): Promise<AssetState[]> {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        const states = await backendApi.getAssetState();
+        return states.map((s) => ({
+          asset_id: s.asset_id,
+          asset_name: s.asset_name,
+          ownership: s.ownership as Asset['ownership'],
+          mode: s.mode as Asset['mode'],
+          tag: s.tag,
+          stock: s.stock,
+          damaged: s.damaged,
+          with_members: s.with_members,
+          lost: s.lost,
+          scrapped: s.scrapped,
+          exchanged: s.exchanged,
+        }));
+      } catch (err) {
+        console.warn('Backend getAssetState failed:', err);
+      }
+    }
     return getEngine().getAssetState(asOfDate);
   },
 
   async getAssetHoldings(asOfDate?: string): Promise<AssetHolding[]> {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        const holdings = await backendApi.getAssetHoldings();
+        return holdings.map((h) => ({
+          asset_id: h.asset_id,
+          asset_name: h.asset_name,
+          member_id: h.member_id,
+          member_name: h.member_name,
+          quantity: h.quantity,
+        }));
+      } catch (err) {
+        console.warn('Backend getAssetHoldings failed:', err);
+      }
+    }
     return getEngine().getAssetHoldings(asOfDate);
   },
 
   async getAdminReplacementQueue(): Promise<AssetState[]> {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        const queue = await backendApi.getReplacementQueue();
+        return queue.map((s) => ({
+          asset_id: s.asset_id,
+          asset_name: s.asset_name,
+          ownership: s.ownership as Asset['ownership'],
+          mode: s.mode as Asset['mode'],
+          tag: s.tag,
+          stock: s.stock,
+          damaged: s.damaged,
+          with_members: s.with_members,
+          lost: s.lost,
+          scrapped: s.scrapped,
+          exchanged: s.exchanged,
+        }));
+      } catch (err) {
+        console.warn('Backend getAdminReplacementQueue failed:', err);
+      }
+    }
     return getEngine().getAdminReplacementQueue();
   },
 
@@ -884,7 +1240,72 @@ export const api = {
     tag?: string | null;
     note?: string;
   }): Promise<Asset> {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        const out = await backendApi.createAsset({
+          name: params.name,
+          mode: params.mode,
+          ownership: params.ownership,
+          tag: params.tag ?? null,
+          note: params.note,
+        });
+        const created = getEngine().createAsset(params);
+        return {
+          ...created,
+          id: out.id || created.id,
+          name: out.name,
+          mode: out.mode as Asset['mode'],
+          ownership: out.ownership as Asset['ownership'],
+          tag: out.tag,
+          note: out.note,
+        };
+      } catch (err) {
+        if (authStorage.getMode() === 'backend') throw err;
+        console.warn('Backend createAsset failed, falling back to engine:', err);
+      }
+    }
     return getEngine().createAsset(params);
+  },
+
+  async editAsset(
+    assetId: number,
+    data: { name?: string; mode?: Asset['mode']; ownership?: Asset['ownership']; tag?: string | null; note?: string }
+  ): Promise<AssetOut> {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        const out = await backendApi.editAsset(assetId, data);
+        const asset = getEngine().getAssets().find((a) => a.id === assetId);
+        if (asset) {
+          if (data.name !== undefined) asset.name = data.name;
+          if (data.mode !== undefined) asset.mode = data.mode;
+          if (data.ownership !== undefined) asset.ownership = data.ownership;
+          if (data.tag !== undefined) asset.tag = data.tag;
+          if (data.note !== undefined) asset.note = data.note;
+          getEngine().saveToStorage();
+        }
+        return out;
+      } catch (err) {
+        if (authStorage.getMode() === 'backend') throw err;
+        console.warn('Backend editAsset failed:', err);
+      }
+    }
+    const asset = getEngine().getAssets().find((a) => a.id === assetId);
+    if (asset) {
+      if (data.name !== undefined) asset.name = data.name;
+      if (data.mode !== undefined) asset.mode = data.mode;
+      if (data.ownership !== undefined) asset.ownership = data.ownership;
+      if (data.tag !== undefined) asset.tag = data.tag;
+      if (data.note !== undefined) asset.note = data.note;
+      getEngine().saveToStorage();
+    }
+    return {
+      id: assetId,
+      name: data.name ?? asset?.name ?? '',
+      mode: (data.mode ?? asset?.mode ?? 'individual') as AssetMode,
+      ownership: (data.ownership ?? asset?.ownership ?? 'lab') as AssetOwner,
+      tag: data.tag !== undefined ? data.tag : asset?.tag ?? null,
+      note: data.note ?? asset?.note ?? '',
+    };
   },
 
   async recordAssetEvent(params: {
@@ -899,25 +1320,113 @@ export const api = {
     source?: AcquireSource | null;
     ledger_transaction_id?: number | null;
   }): Promise<AssetEvent> {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        await backendApi.recordAssetEvent(params.asset_id, {
+          kind: params.kind,
+          quantity: params.quantity,
+          occurred_on: params.occurred_on,
+          note: params.note,
+          member_id: params.member_id,
+          source: params.source,
+          ledger_transaction_id: params.ledger_transaction_id,
+        });
+        return getEngine().recordAssetEvent(params);
+      } catch (err) {
+        if (authStorage.getMode() === 'backend') throw err;
+        console.warn('Backend recordAssetEvent failed:', err);
+      }
+    }
     return getEngine().recordAssetEvent(params);
   },
 
+  async fixAssetEvent(params: {
+    asset_id: number;
+    event_id: number;
+    quantity: number;
+    occurred_on: string;
+    note?: string;
+  }): Promise<any> {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        return await backendApi.fixAssetEvent(params.asset_id, params.event_id, {
+          quantity: params.quantity,
+          occurred_on: params.occurred_on,
+          note: params.note,
+        });
+      } catch (err) {
+        if (authStorage.getMode() === 'backend') throw err;
+        console.warn('Backend fixAssetEvent failed:', err);
+      }
+    }
+    return { ok: true };
+  },
+
+  async getAssetActivity(fromDate?: string, toDate?: string): Promise<AssetActivityOut[]> {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        return await backendApi.getAssetActivity({ from_date: fromDate, to_date: toDate });
+      } catch (err) {
+        console.warn('Backend getAssetActivity failed:', err);
+      }
+    }
+    return [];
+  },
+
   // -----------------------------------------------------------------------------------
-  // Trust & Reconciliation (Backend Phase 10 - Not yet in openapi.json, handled by Engine)
+  // Trust & Reconciliation (Backend Phase 10 & openapi.json)
   // -----------------------------------------------------------------------------------
   async getReconciliations(): Promise<Reconciliation[]> {
     return getEngine().getReconciliations();
   },
 
   async getReconciliationStatus(): Promise<ReconciliationStatus> {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        const s = await backendApi.getReconciliationStatus();
+        return {
+          last_match_id: s.last_match_id,
+          last_match_date: s.last_match_date,
+          last_match_through_entry: s.last_match_through_entry,
+          days_since_last_match: s.days_since_last_match,
+          entries_since_last_match: s.entries_since_last_match,
+          latest_attempt_matched: s.latest_attempt_matched,
+          latest_difference: s.latest_difference,
+        };
+      } catch (err) {
+        console.warn('Backend getReconciliationStatus failed, falling back to engine:', err);
+      }
+    }
     return getEngine().getReconciliationStatus();
   },
 
   async getUnverifiedEntries() {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        return await backendApi.getUnverifiedEntries();
+      } catch (err) {
+        console.warn('Backend getUnverifiedEntries failed, falling back to engine:', err);
+      }
+    }
     return getEngine().getUnverifiedEntries();
   },
 
   async getDifferenceSuspects(difference: number, envelopeId?: number): Promise<DifferenceSuspect[]> {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        const suspects = await backendApi.getDifferenceSuspects(difference, envelopeId);
+        return suspects.map((s) => ({
+          entry_id: s.entry_id,
+          kind: s.kind as any,
+          occurred_on: s.occurred_on,
+          effect: s.effect,
+          note: s.note,
+          why: s.why,
+        }));
+      } catch (err) {
+        console.warn('Backend getDifferenceSuspects failed, falling back to engine:', err);
+      }
+    }
     return getEngine().getDifferenceSuspects(difference, envelopeId);
   },
 
@@ -928,6 +1437,40 @@ export const api = {
     countedEnvelopes?: Record<number, number>;
     date?: string;
   }): Promise<Reconciliation> {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        const strCounted: Record<string, number> | undefined = params.countedEnvelopes
+          ? Object.fromEntries(Object.entries(params.countedEnvelopes).map(([k, v]) => [k, v]))
+          : undefined;
+        const out = await backendApi.recordReconciliation({
+          counted_total: params.countedTotal,
+          counted: strCounted,
+          note: params.note,
+        });
+        const rec: Reconciliation = {
+          id: out.id,
+          tenure_id: 1,
+          through_entry_id: out.through_entry_id,
+          checked_on: params.date ?? new Date().toISOString().split('T')[0],
+          system_total: out.system_total,
+          counted_total: out.counted_total,
+          difference: out.difference,
+          matched: out.matched,
+          recorded_at: new Date().toISOString(),
+          recorded_by: params.by,
+          note: params.note ?? '',
+        };
+        try {
+          getEngine().recordReconciliation(params);
+        } catch {
+          // ignore local engine mismatch in backend mode
+        }
+        return rec;
+      } catch (err) {
+        if (authStorage.getMode() === 'backend') throw err;
+        console.warn('Backend recordReconciliation failed, falling back to engine:', err);
+      }
+    }
     return getEngine().recordReconciliation(params);
   },
 
@@ -963,6 +1506,8 @@ export const api = {
     if (typeof localStorage !== 'undefined') {
       try {
         localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem('mesl_vault_state_v4');
+        localStorage.removeItem('mesl_vault_clean_v2');
         localStorage.removeItem('mesl_lab_finance_v1');
       } catch {}
     }
@@ -971,7 +1516,15 @@ export const api = {
   },
 
   resetToSeed(): void {
-    getEngine().loadRawState(getSeedData());
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem('mesl_vault_state_v4');
+        localStorage.removeItem('mesl_vault_clean_v2');
+        localStorage.removeItem('mesl_lab_finance_v1');
+      } catch {}
+    }
+    getEngine().loadRawState(getCleanInitialData());
     getEngine().saveToStorage();
   },
 

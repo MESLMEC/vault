@@ -65,7 +65,7 @@ export interface DatabaseState {
   reconciliation_envelopes: ReconciliationEnvelope[];
 }
 
-export const STORAGE_KEY = 'mesl_vault_state_v4';
+export const STORAGE_KEY = 'mesl_vault_storage_v5';
 
 // Custom Human Error for Refusals
 export class RefusalError extends Error {
@@ -308,9 +308,30 @@ export class FinanceEngine {
     this.notify();
   }
 
+  public updateCostCenterKind(id: number, kind: CostCenter['kind']) {
+    const cc = this.state.cost_centers.find((c) => c.id === id);
+    if (!cc) throw new RefusalError(`Cost center #${id} does not exist.`);
+    if (this.state.cost_centers.some((c) => c.id !== id && c.kind === kind && c.name.toLowerCase() === cc.name.toLowerCase())) {
+      throw new RefusalError(`A ${kind} named "${cc.name}" already exists.`);
+    }
+    cc.kind = kind;
+    this.notify();
+  }
+
   // Members & Membership Periods
   public getMembers(): Member[] {
     return [...this.state.members].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  public syncMembers(members: Member[]): void {
+    for (const m of members) {
+      const idx = this.state.members.findIndex((existing) => existing.id === m.id);
+      if (idx >= 0) {
+        this.state.members[idx] = { ...this.state.members[idx], ...m };
+      } else {
+        this.state.members.push({ ...m });
+      }
+    }
   }
 
   public getMembershipPeriods(): MembershipPeriod[] {
@@ -402,13 +423,6 @@ export class FinanceEngine {
     const tenure = this.getOpenTenure();
     if (effectiveFrom < tenure.opened_on) {
       throw new RefusalError(`A rate cannot start before this tenure opened on ${tenure.opened_on}.`);
-    }
-    const currentWeekSunday = sundayOnOrBefore(toLocalDateStr(new Date()));
-    if (effectiveFrom < currentWeekSunday) {
-      throw new RefusalError(
-        `A rate cannot be backdated before the current week (${currentWeekSunday}).`,
-        'Use a waiver for adjustments on past weeks.'
-      );
     }
 
     const nextId = this.state.fee_rates.reduce((m, r) => Math.max(m, r.id), 0) + 1;

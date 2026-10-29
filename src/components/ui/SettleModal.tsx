@@ -23,6 +23,8 @@ export interface SettleModalProps {
   size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | 'full';
   className?: string;
   contentClassName?: string;
+  containerClassName?: string;
+  zIndex?: number;
 }
 
 const sizeMap: Record<NonNullable<SettleModalProps['size']>, string> = {
@@ -56,6 +58,8 @@ export const SettleModal: React.FC<SettleModalProps> = ({
   size = 'md',
   className,
   contentClassName,
+  containerClassName,
+  zIndex,
 }) => {
   const isModalOpen = open ?? isOpen ?? false;
   const titleId = useId();
@@ -78,7 +82,11 @@ export const SettleModal: React.FC<SettleModalProps> = ({
     <AnimatePresence>
       {isModalOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
+          className={cn(
+            'fixed inset-0 flex items-center justify-center p-4 sm:p-6 overflow-y-auto',
+            containerClassName || 'z-50'
+          )}
+          style={zIndex !== undefined ? { zIndex } : undefined}
           aria-labelledby={title ? titleId : undefined}
           role="dialog"
           aria-modal="true"

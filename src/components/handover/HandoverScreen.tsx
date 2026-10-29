@@ -12,8 +12,10 @@ import {
   Users,
   Wrench,
   X,
+  Loader2,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import meslLogo from '../../assets/mesl-logo.png';
 import { Tenure, EnvelopeBalance, MemberStanding, AssetState, AssetHolding } from '../../lib/db/types';
 import { api } from '../../services/api';
 import { formatTaka, formatDate, formatDateTime } from '../../lib/utils';
@@ -168,7 +170,7 @@ export const HandoverScreen: React.FC<HandoverScreenProps> = ({
             {closedResult.checksum}
           </div>
           <p className="text-[11px] text-emerald-600 dark:text-emerald-500">
-            Click "Print Official Handover Report" above to sign paper certificates for the outgoing committee, incoming treasurer, and lab director.
+            Click "Print Official Handover Report" above to sign paper certificates for the outgoing committee, incoming treasurer, and president.
           </p>
         </div>
       )}
@@ -225,11 +227,11 @@ export const HandoverScreen: React.FC<HandoverScreenProps> = ({
       <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-8 shadow-sm space-y-8 print:border-none print:shadow-none print:p-0">
         {/* Document Header */}
         <div className="border-b-2 border-zinc-900 pb-4 text-center space-y-1">
-          <div className="text-[11px] font-bold tracking-widest uppercase text-zinc-500">
-            Department of Electrical & Electronic Engineering
+          <div className="flex justify-center pb-2">
+            <img src={meslLogo} alt="MESL Club Logo" className="h-24 w-24 object-contain" />
           </div>
-          <h1 className="text-xl font-bold tracking-tight text-zinc-900 uppercase">
-            Mechatronics & Embedded Systems Lab (MESL)
+          <h1 className="text-xl font-bold tracking-tight text-zinc-900">
+            Mechatronics & Embedded Systems Lab
           </h1>
           <div className="text-sm font-semibold text-zinc-700">
             Official Committee Financial & Asset Handover Certificate
@@ -381,7 +383,6 @@ export const HandoverScreen: React.FC<HandoverScreenProps> = ({
             <div className="h-10"></div>
             <div className="border-t border-zinc-800 pt-2">
               <div className="font-semibold text-zinc-900">Outgoing Treasurer</div>
-              <div className="text-[10px] text-zinc-500">Signature & Date</div>
             </div>
           </div>
 
@@ -389,15 +390,13 @@ export const HandoverScreen: React.FC<HandoverScreenProps> = ({
             <div className="h-10"></div>
             <div className="border-t border-zinc-800 pt-2">
               <div className="font-semibold text-zinc-900">Incoming Treasurer</div>
-              <div className="text-[10px] text-zinc-500">Signature & Date</div>
             </div>
           </div>
 
           <div className="space-y-12">
             <div className="h-10"></div>
             <div className="border-t border-zinc-800 pt-2">
-              <div className="font-semibold text-zinc-900">Lab Director / Faculty Advisor</div>
-              <div className="text-[10px] text-zinc-500">Signature & Seal</div>
+              <div className="font-semibold text-zinc-900">President</div>
             </div>
           </div>
         </div>
@@ -484,9 +483,10 @@ export const HandoverScreen: React.FC<HandoverScreenProps> = ({
                 <button
                   type="submit"
                   disabled={isClosing}
-                  className="rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 shadow-sm"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Confirm & Seal Handover
+                  {isClosing && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+                  <span>{isClosing ? 'Sealing Handover...' : 'Confirm & Seal Handover'}</span>
                 </button>
               </div>
             </form>

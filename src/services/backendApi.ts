@@ -11,6 +11,10 @@ import {
   IncomeSource,
   EntryKind,
   AdjustmentKind,
+  AssetMode,
+  AssetOwner,
+  AssetEventKind,
+  AcquireSource,
 } from '../lib/db/types';
 
 // =====================================================================================
@@ -70,6 +74,10 @@ export interface RenameCostCenterRequest {
 
 export interface SetCostCenterStatusRequest {
   status: CostCenterStatus;
+}
+
+export interface SetCostCenterKindRequest {
+  kind: CostCenterKind;
 }
 
 export interface AllocationContextOut {
@@ -190,13 +198,20 @@ export interface EntryOut {
   corrected_from: number | null;
 }
 
+export interface LedgerLineOut {
+  id: number;
+  transaction_id: number;
+  envelope_id: number;
+  amount: number;
+}
+
 export interface EntryCreated {
   id: number;
 }
 
 export interface DepositRequest {
   amount: number;
-  envelope_id: number;
+  envelope_id?: number | null;
   occurred_on: string;
   cost_center_id?: number | null;
   member_id?: number | null;
@@ -282,6 +297,251 @@ export interface EntryLabelsOut {
   cost_center_id: number | null;
   occurred_on: string;
   source: IncomeSource | null;
+}
+
+export interface AllocationSuggestionRequest {
+  amount: number;
+  shares?: Record<string, number> | null;
+}
+
+export interface AllocationSuggestionOut {
+  envelope_id: number;
+  envelope_name: string;
+  balance: number;
+  target_cap: number | null;
+  alloc_priority: number | null;
+  gap: number | null;
+  phase: string;
+  suggested: number;
+}
+
+export interface ConfirmAllocationRequest {
+  amounts: Record<string, number>;
+  note: string;
+  occurred_on: string;
+}
+
+export interface AllocationConfirmedOut {
+  id: number;
+  kind: string;
+  pool_balance: number;
+}
+
+export interface SweepRequest {
+  cost_center_id: number;
+  from_envelope_id: number;
+  note: string;
+  occurred_on: string;
+}
+
+export interface SweepCreated {
+  id: number;
+  kind: EntryKind;
+  from_balance: number;
+  pool_balance: number;
+}
+
+export interface AssetOut {
+  id: number;
+  name: string;
+  mode: AssetMode;
+  ownership: AssetOwner;
+  tag: string | null;
+  note: string;
+}
+
+export interface CreateAssetRequest {
+  name: string;
+  mode: AssetMode;
+  ownership: AssetOwner;
+  tag?: string | null;
+  note?: string;
+}
+
+export interface EditAssetRequest {
+  name?: string | null;
+  mode?: AssetMode | null;
+  ownership?: AssetOwner | null;
+  tag?: string | null;
+  note?: string | null;
+}
+
+export interface AssetStateOut {
+  asset_id: number;
+  asset_name: string;
+  mode: AssetMode;
+  ownership: AssetOwner;
+  tag: string | null;
+  stock: number;
+  damaged: number;
+  with_members: number;
+  lost: number;
+  scrapped: number;
+  exchanged: number;
+}
+
+export interface WhoHasWhatOut {
+  asset_id: number;
+  asset_name: string;
+  member_id: number;
+  member_name: string;
+  quantity: number;
+}
+
+export interface AssetActivityOut {
+  asset_name: string;
+  events: number;
+  kind: string;
+  ownership: string;
+  source: string | null;
+  units: number;
+}
+
+export interface AssetEventRequest {
+  kind: AssetEventKind;
+  quantity: number;
+  occurred_on: string;
+  note?: string;
+  member_id?: number | null;
+  source?: AcquireSource | null;
+  ledger_transaction_id?: number | null;
+}
+
+export interface AssetEventOut {
+  id: number;
+  asset_id: number;
+  kind: string;
+  quantity: number;
+  occurred_on: string;
+  note: string;
+}
+
+export interface FixEventRequest {
+  quantity: number;
+  occurred_on: string;
+  note?: string;
+}
+
+export interface FixEventOut {
+  id: number;
+  asset_id: number;
+  kind: string;
+  quantity: number;
+  occurred_on: string;
+  note: string;
+  reversal_id: number;
+}
+
+export interface CostCenterSummaryOut {
+  cost_center_id: number;
+  name: string;
+  kind: CostCenterKind;
+  status: CostCenterStatus;
+  money_in: number;
+  money_out: number;
+  swept: number;
+  leftover: number;
+}
+
+export interface ReconciliationStatusOut {
+  last_match_id: number | null;
+  last_match_date: string | null;
+  last_match_through_entry: number | null;
+  days_since_last_match: number | null;
+  entries_since_last_match: number;
+  latest_attempt_matched: boolean | null;
+  latest_difference: number | null;
+}
+
+export interface ReconcileRequest {
+  counted_total: number;
+  counted?: Record<string, number> | null;
+  note?: string;
+}
+
+export interface ReconcileOut {
+  id: number;
+  through_entry_id: number;
+  system_total: number;
+  counted_total: number;
+  difference: number;
+  matched: boolean;
+}
+
+export interface UnverifiedEntryOut {
+  id: number;
+  tenure_id: number;
+  kind: string;
+  occurred_on: string;
+  recorded_at: string;
+  recorded_by: string;
+  note: string;
+  tag: string | null;
+  cost_center_id: number | null;
+  member_id: number | null;
+  reverses_id: number | null;
+  is_voided: boolean;
+  net_effect: number;
+  size: number;
+}
+
+export interface DifferenceSuspectOut {
+  entry_id: number;
+  kind: string;
+  occurred_on: string;
+  effect: number;
+  note: string;
+  why: string;
+}
+
+export interface CloseTenureRequest {
+  close_on: string;
+  next_name: string;
+}
+
+export interface CloseTenureOut {
+  id: number;
+  name: string;
+  opened_on: string;
+}
+
+export interface TenureOut {
+  id: number;
+  name: string;
+  opened_on: string;
+  closed_on: string | null;
+  closed_at: string | null;
+  closing_checksum: string | null;
+}
+
+export interface AssetSnapshotOut {
+  tenure_id: number;
+  asset_id: number;
+  as_of: string;
+  stock: number;
+  damaged: number;
+  held: number;
+  lost: number;
+  scrapped: number;
+  exchanged: number;
+}
+
+export interface HoldingSnapshotOut {
+  tenure_id: number;
+  asset_id: number;
+  member_id: number;
+  quantity: number;
+}
+
+export interface MemberSnapshotOut {
+  tenure_id: number;
+  member_id: number;
+  as_of: string;
+  weeks_owed: number;
+  owed: number;
+  credits: number;
+  balance: number;
+  weeks_overdue: number;
 }
 
 export interface ProblemDetail {
@@ -468,7 +728,7 @@ export const backendApi = {
     try {
       const baseUrl = authStorage.getBaseUrl();
       const token = authStorage.getToken();
-      const res = await fetch(`${baseUrl}/api/v1/allocation-context`, {
+      const res = await fetch(`${baseUrl}/api/v1/health`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (res.ok) {
@@ -481,6 +741,10 @@ export const backendApi = {
     } catch {
       return { online: false, authenticated: false };
     }
+  },
+
+  async getHealth(): Promise<string[]> {
+    return request<string[]>('/api/v1/health');
   },
 
   // Auth (Phase 4)
@@ -525,6 +789,13 @@ export const backendApi = {
     return request<CostCenterOut>(`/api/v1/cost-centers/${costCenterId}/status`, {
       method: 'POST',
       body: JSON.stringify({ status }),
+    });
+  },
+
+  async setCostCenterKind(costCenterId: number, kind: CostCenterKind): Promise<CostCenterOut> {
+    return request<CostCenterOut>(`/api/v1/cost-centers/${costCenterId}/kind`, {
+      method: 'POST',
+      body: JSON.stringify({ kind }),
     });
   },
 
@@ -646,6 +917,11 @@ export const backendApi = {
     return request<EntryOut[]>(`/api/v1/entries${qs}`);
   },
 
+  async getLedgerLines(tenureId?: number): Promise<LedgerLineOut[]> {
+    const qs = tenureId ? `?tenure_id=${tenureId}` : '';
+    return request<LedgerLineOut[]>(`/api/v1/ledger-lines${qs}`);
+  },
+
   async recordDeposit(data: DepositRequest): Promise<EntryCreated> {
     return request<EntryCreated>('/api/v1/deposits', {
       method: 'POST',
@@ -686,5 +962,136 @@ export const backendApi = {
       method: 'POST',
       body: JSON.stringify(data),
     });
+  },
+
+  // Cost Center Summary
+  async getCostCenterSummary(costCenterId: number): Promise<CostCenterSummaryOut> {
+    return request<CostCenterSummaryOut>(`/api/v1/cost-centers/${costCenterId}/summary`);
+  },
+
+  // Allocation Suggestions & Confirmations & Sweeps
+  async getAllocationSuggestion(data: AllocationSuggestionRequest): Promise<AllocationSuggestionOut[]> {
+    return request<AllocationSuggestionOut[]>('/api/v1/allocation-suggestion', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async confirmAllocation(data: ConfirmAllocationRequest): Promise<AllocationConfirmedOut> {
+    return request<AllocationConfirmedOut>('/api/v1/allocations', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async recordSweep(data: SweepRequest): Promise<SweepCreated> {
+    return request<SweepCreated>('/api/v1/sweeps', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Assets & Equipment
+  async getAssets(): Promise<AssetOut[]> {
+    return request<AssetOut[]>('/api/v1/assets');
+  },
+
+  async createAsset(data: CreateAssetRequest): Promise<AssetOut> {
+    return request<AssetOut>('/api/v1/assets', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async editAsset(assetId: number, data: EditAssetRequest): Promise<AssetOut> {
+    return request<AssetOut>(`/api/v1/assets/${assetId}/edit`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getAssetState(): Promise<AssetStateOut[]> {
+    return request<AssetStateOut[]>('/api/v1/assets/state');
+  },
+
+  async getAssetHoldings(): Promise<WhoHasWhatOut[]> {
+    return request<WhoHasWhatOut[]>('/api/v1/assets/holdings');
+  },
+
+  async getReplacementQueue(): Promise<AssetStateOut[]> {
+    return request<AssetStateOut[]>('/api/v1/assets/replacement-queue');
+  },
+
+  async getAssetActivity(params?: { from_date?: string; to_date?: string }): Promise<AssetActivityOut[]> {
+    const query = new URLSearchParams();
+    if (params?.from_date) query.set('from_date', params.from_date);
+    if (params?.to_date) query.set('to_date', params.to_date);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return request<AssetActivityOut[]>(`/api/v1/assets/activity${qs}`);
+  },
+
+  async recordAssetEvent(assetId: number, data: AssetEventRequest): Promise<AssetEventOut> {
+    return request<AssetEventOut>(`/api/v1/assets/${assetId}/events`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async fixAssetEvent(assetId: number, eventId: number, data: FixEventRequest): Promise<FixEventOut> {
+    return request<FixEventOut>(`/api/v1/assets/${assetId}/events/${eventId}/fix`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Reconciliation
+  async getReconciliationStatus(): Promise<ReconciliationStatusOut> {
+    return request<ReconciliationStatusOut>('/api/v1/reconciliation-status');
+  },
+
+  async recordReconciliation(data: ReconcileRequest): Promise<ReconcileOut> {
+    return request<ReconcileOut>('/api/v1/reconciliations', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getUnverifiedEntries(): Promise<UnverifiedEntryOut[]> {
+    return request<UnverifiedEntryOut[]>('/api/v1/unverified-entries');
+  },
+
+  async getDifferenceSuspects(difference: number, envelopeId?: number): Promise<DifferenceSuspectOut[]> {
+    const query = new URLSearchParams();
+    query.set('difference', difference.toString());
+    if (envelopeId != null) query.set('envelope_id', envelopeId.toString());
+    return request<DifferenceSuspectOut[]>(`/api/v1/difference-suspects?${query.toString()}`);
+  },
+
+  // Tenures & Snapshots
+  async getOpenTenure(): Promise<TenureOut> {
+    return request<TenureOut>('/api/v1/tenures/open');
+  },
+
+  async getTenures(): Promise<TenureOut[]> {
+    return request<TenureOut[]>('/api/v1/tenures');
+  },
+
+  async closeTenure(data: CloseTenureRequest): Promise<CloseTenureOut> {
+    return request<CloseTenureOut>('/api/v1/tenures/close', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getTenureAssetSnapshots(tenureId: number): Promise<AssetSnapshotOut[]> {
+    return request<AssetSnapshotOut[]>(`/api/v1/tenures/${tenureId}/asset-snapshots`);
+  },
+
+  async getTenureHoldingSnapshots(tenureId: number): Promise<HoldingSnapshotOut[]> {
+    return request<HoldingSnapshotOut[]>(`/api/v1/tenures/${tenureId}/holding-snapshots`);
+  },
+
+  async getTenureMemberSnapshots(tenureId: number): Promise<MemberSnapshotOut[]> {
+    return request<MemberSnapshotOut[]>(`/api/v1/tenures/${tenureId}/member-snapshots`);
   },
 };

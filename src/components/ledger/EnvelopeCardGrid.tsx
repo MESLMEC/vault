@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { EnvelopeBalance } from '../../lib/db/types';
 import { formatTaka } from '../../lib/utils';
-import { Layers, Plus, Sparkles, AlertCircle, Settings2, Trash2 } from 'lucide-react';
+import { Layers, Plus, Sparkles, AlertCircle, Settings2, Trash2, Loader2 } from 'lucide-react';
 import { api } from '../../services/api';
 import { useConfirmation } from '../../context/ConfirmationContext';
 
@@ -27,9 +27,12 @@ export const EnvelopeCardGrid: React.FC<EnvelopeCardGridProps> = ({
   const [editName, setEditName] = useState('');
   const [editCap, setEditCap] = useState<string>('');
   const [editPriority, setEditPriority] = useState<string>('');
+  const [isCreating, setIsCreating] = useState(false);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsCreating(true);
     try {
       const capNum = targetCap ? parseInt(targetCap, 10) : null;
       const prioNum = allocPriority ? parseInt(allocPriority, 10) : null;
@@ -41,6 +44,8 @@ export const EnvelopeCardGrid: React.FC<EnvelopeCardGridProps> = ({
       onEnvelopeCreated();
     } catch (err) {
       onError(err);
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -54,6 +59,7 @@ export const EnvelopeCardGrid: React.FC<EnvelopeCardGridProps> = ({
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editEnv) return;
+    setIsSavingSettings(true);
     try {
       if (editName.trim() && editName.trim() !== editEnv.name) {
         await api.renameEnvelope(editEnv.id, editName.trim());
@@ -68,6 +74,8 @@ export const EnvelopeCardGrid: React.FC<EnvelopeCardGridProps> = ({
       onEnvelopeCreated();
     } catch (err) {
       onError(err);
+    } finally {
+      setIsSavingSettings(false);
     }
   };
 
@@ -264,9 +272,11 @@ export const EnvelopeCardGrid: React.FC<EnvelopeCardGridProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200"
+                  disabled={isCreating}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Create Envelope
+                  {isCreating && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+                  <span>{isCreating ? 'Creating...' : 'Create Envelope'}</span>
                 </button>
               </div>
             </form>
@@ -353,9 +363,11 @@ export const EnvelopeCardGrid: React.FC<EnvelopeCardGridProps> = ({
                   </button>
                   <button
                     type="submit"
-                    className="rounded-lg bg-zinc-900 dark:bg-zinc-100 px-3 py-1.5 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200"
+                    disabled={isSavingSettings}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-zinc-900 dark:bg-zinc-100 px-3 py-1.5 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Save Changes
+                    {isSavingSettings && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+                    <span>{isSavingSettings ? 'Saving...' : 'Save Changes'}</span>
                   </button>
                 </div>
               </div>

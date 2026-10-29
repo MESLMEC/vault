@@ -1,5 +1,5 @@
-import React from 'react';
-import { AlertCircle, AlertTriangle, CheckCircle2, HelpCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { AlertCircle, AlertTriangle, CheckCircle2, HelpCircle, Loader2 } from 'lucide-react';
 import { SettleModal } from '../ui/SettleModal';
 
 export interface ConfirmationOptions {
@@ -14,7 +14,7 @@ export interface ConfirmationOptions {
 export interface ConfirmationModalProps extends ConfirmationOptions {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<any>;
 }
 
 export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
@@ -28,6 +28,23 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
   variant = 'warning',
   isAlert = false,
 }) => {
+  const [isConfirming, setIsConfirming] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) setIsConfirming(false);
+  }, [isOpen]);
+
+  const handleConfirm = async () => {
+    setIsConfirming(true);
+    try {
+      await onConfirm();
+      onClose();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsConfirming(false);
+    }
+  };
   const getVariantStyles = () => {
     switch (variant) {
       case 'danger':
@@ -95,8 +112,9 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
           {!isAlert && (
             <button
               type="button"
+              disabled={isConfirming}
               onClick={onClose}
-              className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-transparent px-4 py-2 text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+              className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-transparent px-4 py-2 text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer disabled:opacity-50"
             >
               {cancelLabel}
             </button>
@@ -104,13 +122,12 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
           <button
             type="button"
             autoFocus
-            onClick={() => {
-              onConfirm();
-              onClose();
-            }}
-            className={`rounded-lg px-4 py-2 text-xs font-semibold transition-colors cursor-pointer ${style.confirmBtn}`}
+            disabled={isConfirming}
+            onClick={handleConfirm}
+            className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${style.confirmBtn}`}
           >
-            {confirmLabel}
+            {isConfirming && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+            <span>{isConfirming ? 'Processing...' : confirmLabel}</span>
           </button>
         </>
       }
