@@ -93,6 +93,14 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
         const pool = envelopes.find((e) => e.is_pool);
         if (!pool) throw new Error('General Pool envelope not found.');
 
+        if (source === 'weekly_fee' && !memId) {
+          onError({
+            reason: 'Member Required',
+            remediation: 'Weekly fee deposits must be linked to a member. Please select a member from the dropdown.',
+          });
+          return;
+        }
+
         await api.recordTransaction({
           kind: 'deposit',
           occurred_on: date,

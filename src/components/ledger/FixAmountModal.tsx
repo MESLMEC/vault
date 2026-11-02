@@ -37,6 +37,14 @@ export const FixAmountModal: React.FC<FixAmountModalProps> = ({
       return;
     }
 
+    if (!newNote.trim()) {
+      onError({
+        reason: 'Explanation Note Required',
+        remediation: 'Please provide a non-blank note explaining why the amount is being corrected.',
+      });
+      return;
+    }
+
     setLoading(true);
     try {
       // Re-sign according to original line direction
@@ -48,7 +56,8 @@ export const FixAmountModal: React.FC<FixAmountModalProps> = ({
       await api.fixAmount({
         transactionId: transaction.id,
         newLines: updatedLines,
-        newNote,
+        newNote: newNote.trim(),
+        occurred_on: transaction.occurred_on,
         by: recordedBy,
       });
 

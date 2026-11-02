@@ -37,6 +37,7 @@ import {
   LoginRequest,
   TokenResponse,
   EnvelopeOut,
+  DepositRequest,
   CostCenterOut,
   MemberOut,
   MembershipPeriodOut,
@@ -366,7 +367,18 @@ export const api = {
   async updateEnvelopeSettings(id: number, settings: { target_cap?: number | null; alloc_priority?: number | null }): Promise<EnvelopeOut> {
     if (this.isBackendMode() && authStorage.getToken()) {
       try {
-        const res = await backendApi.updateEnvelopeSettings(id, settings);
+        let target_cap = settings.target_cap;
+        let alloc_priority = settings.alloc_priority;
+        if (target_cap === undefined || alloc_priority === undefined) {
+          const envs = await this.getEnvelopes();
+          const existing = envs.find((e) => e.id === id);
+          if (target_cap === undefined) target_cap = existing?.target_cap ?? null;
+          if (alloc_priority === undefined) alloc_priority = existing?.alloc_priority ?? null;
+        }
+        const res = await backendApi.updateEnvelopeSettings(id, {
+          target_cap: target_cap ?? null,
+          alloc_priority: alloc_priority ?? null,
+        });
         getEngine().updateEnvelope(id, settings);
         return res;
       } catch (err) {
@@ -945,17 +957,31 @@ export const api = {
     if (this.isBackendMode() && authStorage.getToken()) {
       try {
         if (params.kind === 'deposit') {
+          if (!params.source) {
+            throw new Error('An income source is required for deposits.');
+          }
           const line = params.lines[0];
-          await backendApi.recordDeposit({
+          const depositData: DepositRequest = {
             amount: Math.abs(line?.amount || 0),
-            envelope_id: params.source === 'weekly_fee' ? undefined : (line?.envelope_id || undefined),
             occurred_on: params.occurred_on,
-            cost_center_id: params.cost_center_id,
-            member_id: params.member_id,
             source: params.source,
-            tag: params.tag,
-            note: params.note,
-          });
+            note: params.note || '',
+            tag: params.tag || null,
+            cost_center_id: params.cost_center_id || null,
+          };
+          if (params.source === 'weekly_fee') {
+            if (!params.member_id) {
+              throw new Error('A member must be selected for weekly fee deposits.');
+            }
+            depositData.member_id = params.member_id;
+            // envelope_id must be omitted
+          } else {
+            // member_id is forbidden
+            if (line?.envelope_id) {
+              depositData.envelope_id = line.envelope_id;
+            }
+          }
+          await backendApi.recordDeposit(depositData);
         } else if (params.kind === 'expense') {
           const line = params.lines[0];
           await backendApi.recordExpense({
@@ -998,6 +1024,9 @@ export const api = {
     note?: string | null;
     recorded_by?: string;
   }): Promise<LedgerTransaction> {
+    if (!params.member_id) {
+      throw new Error('A member_id is strictly required when recording a refund.');
+    }
     if (this.isBackendMode() && authStorage.getToken()) {
       try {
         await backendApi.recordRefund({
@@ -1006,7 +1035,7 @@ export const api = {
           member_id: params.member_id,
           cost_center_id: params.cost_center_id,
           tag: params.tag,
-          note: params.note,
+          note: params.note || '',
         });
       } catch (err) {
         if (authStorage.getMode() === 'backend') throw err;
@@ -1031,15 +1060,31 @@ export const api = {
     transactionId: number;
     newLines: Array<{ envelope_id: number; amount: number }>;
     newNote?: string;
+    occurred_on?: string;
     by: string;
   }): Promise<{ reversal: LedgerTransaction; replacement: LedgerTransaction }> {
     if (this.isBackendMode() && authStorage.getToken()) {
       try {
         const positiveAmount = Math.abs(params.newLines[0]?.amount || 0);
+        let occurredOn = params.occurred_on;
+        if (!occurredOn) {
+          try {
+            const entries = await backendApi.getEntries();
+            const entry = entries.find((e) => e.id === params.transactionId);
+            if (entry) occurredOn = entry.occurred_on;
+          } catch {
+            // fallback to local engine
+          }
+          if (!occurredOn) {
+            const tx = getEngine().getLedgerTransactions().find((t) => t.id === params.transactionId);
+            occurredOn = tx?.occurred_on || new Date().toISOString().split('T')[0];
+          }
+        }
+        const note = (params.newNote && params.newNote.trim()) ? params.newNote.trim() : 'Corrected amount';
         await backendApi.fixAmount(params.transactionId, {
           amount: positiveAmount,
-          occurred_on: new Date().toISOString().split('T')[0],
-          note: params.newNote || null,
+          occurred_on: occurredOn,
+          note,
         });
       } catch (err) {
         if (authStorage.getMode() === 'backend') throw err;
@@ -1362,11 +1407,15 @@ export const api = {
     return { ok: true };
   },
 
-  async getAssetActivity(fromDate?: string, toDate?: string): Promise<AssetActivityOut[]> {
+  async getAssetActivity(fromDate: string, toDate: string): Promise<AssetActivityOut[]> {
+    if (!fromDate || !toDate) {
+      throw new Error('fromDate and toDate are required to query asset activity.');
+    }
     if (this.isBackendMode() && authStorage.getToken()) {
       try {
         return await backendApi.getAssetActivity({ from_date: fromDate, to_date: toDate });
       } catch (err) {
+        if (authStorage.getMode() === 'backend') throw err;
         console.warn('Backend getAssetActivity failed:', err);
       }
     }
