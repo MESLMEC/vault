@@ -148,6 +148,7 @@ export const App: React.FC = () => {
         initialType={quickTxModal.type}
         onTransactionSaved={triggerRefresh}
         onError={handleError}
+        entries={entries}
       />
 
       {/* Quick Fee Collection Modal */}

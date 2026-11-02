@@ -548,16 +548,19 @@ export const api = {
     by: string;
     date: string;
     note: string;
-  }): Promise<LedgerTransaction> {
+  }): Promise<LedgerTransaction & { serverResult?: any }> {
     if (this.isBackendMode() && authStorage.getToken()) {
       try {
-        await backendApi.recordSweep({
+        const serverResult = await backendApi.recordSweep({
           cost_center_id: params.costCenterId,
           from_envelope_id: params.fromEnvelopeId,
           note: params.note,
           occurred_on: params.date,
         });
-        return getEngine().sweepLeftover(params);
+        const tx = getEngine().sweepLeftover(params);
+        if (serverResult?.id) tx.id = serverResult.id;
+        (tx as any).serverResult = serverResult;
+        return tx;
       } catch (err) {
         if (authStorage.getMode() === 'backend') throw err;
         console.warn('Backend sweepLeftover failed, falling back to engine:', err);
@@ -953,8 +956,9 @@ export const api = {
     source?: IncomeSource | null;
     member_id?: number | null;
     lines: Array<{ envelope_id: number; amount: number }>;
-  }): Promise<LedgerTransaction> {
+  }): Promise<LedgerTransaction & { serverResult?: any }> {
     if (this.isBackendMode() && authStorage.getToken()) {
+      let serverResult: any = undefined;
       try {
         if (params.kind === 'deposit') {
           if (!params.source) {
@@ -981,10 +985,10 @@ export const api = {
               depositData.envelope_id = line.envelope_id;
             }
           }
-          await backendApi.recordDeposit(depositData);
+          serverResult = await backendApi.recordDeposit(depositData);
         } else if (params.kind === 'expense') {
           const line = params.lines[0];
-          await backendApi.recordExpense({
+          serverResult = await backendApi.recordExpense({
             amount: Math.abs(line?.amount || 0),
             envelope_id: line?.envelope_id || 1,
             occurred_on: params.occurred_on,
@@ -995,7 +999,7 @@ export const api = {
         } else if (params.kind === 'transfer') {
           const fromLine = params.lines.find((l) => l.amount < 0);
           const toLine = params.lines.find((l) => l.amount > 0);
-          await backendApi.recordTransfer({
+          serverResult = await backendApi.recordTransfer({
             amount: Math.abs(fromLine?.amount || 0),
             from_envelope_id: fromLine?.envelope_id || 1,
             to_envelope_id: toLine?.envelope_id || 2,
@@ -1006,7 +1010,10 @@ export const api = {
           });
         }
         // Mirror to local engine
-        return getEngine().recordTransaction(params);
+        const tx = getEngine().recordTransaction(params);
+        if (serverResult?.id) tx.id = serverResult.id;
+        (tx as any).serverResult = serverResult;
+        return tx;
       } catch (err) {
         if (authStorage.getMode() === 'backend') throw err;
         console.warn('Backend recordTransaction failed, falling back:', err);
@@ -1023,13 +1030,13 @@ export const api = {
     tag?: string | null;
     note?: string | null;
     recorded_by?: string;
-  }): Promise<LedgerTransaction> {
+  }): Promise<LedgerTransaction & { serverResult?: any }> {
     if (!params.member_id) {
       throw new Error('A member_id is strictly required when recording a refund.');
     }
     if (this.isBackendMode() && authStorage.getToken()) {
       try {
-        await backendApi.recordRefund({
+        const serverResult = await backendApi.recordRefund({
           amount: params.amount,
           occurred_on: params.occurred_on,
           member_id: params.member_id,
@@ -1037,6 +1044,21 @@ export const api = {
           tag: params.tag,
           note: params.note || '',
         });
+        const pool = getEngine().getEnvelopes().find((e) => e.is_pool);
+        const tx = getEngine().recordTransaction({
+          kind: 'expense',
+          occurred_on: params.occurred_on,
+          recorded_by: params.recorded_by || 'Treasurer',
+          note: params.note || `Fee credit refund to member #${params.member_id}`,
+          tag: params.tag || null,
+          cost_center_id: params.cost_center_id || null,
+          source: null,
+          member_id: params.member_id,
+          lines: [{ envelope_id: pool?.id || 1, amount: -Math.abs(params.amount) }],
+        });
+        if (serverResult?.id) tx.id = serverResult.id;
+        (tx as any).serverResult = serverResult;
+        return tx;
       } catch (err) {
         if (authStorage.getMode() === 'backend') throw err;
         console.warn('Backend recordRefund failed:', err);

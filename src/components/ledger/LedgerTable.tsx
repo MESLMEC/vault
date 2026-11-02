@@ -14,6 +14,7 @@ import {
   ChevronUp,
   Share2,
   Receipt,
+  RotateCcw,
 } from 'lucide-react';
 import { LedgerEntryView, Envelope, CostCenter } from '../../lib/db/types';
 import { formatTaka, formatDate } from '../../lib/utils';
@@ -40,6 +41,7 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
   const [search, setSearch] = useState('');
   const [selectedEnvelope, setSelectedEnvelope] = useState<string>('all');
   const [selectedCostCenter, setSelectedCostCenter] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<'current' | 'all'>('current');
 
   // Modal states
   const [fixEntry, setFixEntry] = useState<LedgerEntryView | null>(null);
@@ -63,7 +65,16 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
     }
   };
 
+  const collapsedCount = entries.filter((tx) => tx.kind === 'reversal' || tx.is_voided).length;
+
   const filteredEntries = entries.filter((tx) => {
+    // Mode filter: collapsed (default) hides reversals and voided original entries
+    if (viewMode === 'current') {
+      if (tx.kind === 'reversal' || tx.is_voided) {
+        return false;
+      }
+    }
+
     // Search filter
     const matchesSearch =
       tx.note.toLowerCase().includes(search.toLowerCase()) ||
@@ -120,7 +131,27 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
           />
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Collapsed History View Toggle */}
+          <button
+            type="button"
+            onClick={() => setViewMode(viewMode === 'current' ? 'all' : 'current')}
+            title="Toggle between active entries and full reversal audit trail"
+            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
+              viewMode === 'current'
+                ? 'border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50'
+                : 'border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200'
+            }`}
+          >
+            <Layers className="h-3.5 w-3.5" />
+            <span>{viewMode === 'current' ? 'Active Ledger' : 'Full Audit Trail'}</span>
+            {viewMode === 'current' && collapsedCount > 0 && (
+              <span className="rounded-full bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.2 text-[10px] text-zinc-500 font-mono">
+                {collapsedCount} hidden
+              </span>
+            )}
+          </button>
+
           {/* Envelope Filter */}
           <select
             value={selectedEnvelope}
@@ -220,6 +251,12 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
                               Sweep
                             </span>
                           )}
+                          {tx.kind === 'reversal' && (
+                            <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40">
+                              <RotateCcw className="h-3 w-3" />
+                              Reversal {tx.reverses_id ? `#${tx.reverses_id}` : ''}
+                            </span>
+                          )}
                           {isOpening && (
                             <span className="inline-flex items-center gap-1 rounded-md bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-[11px] font-medium text-zinc-700 dark:text-zinc-300">
                               Opening
@@ -230,14 +267,21 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
                         {/* Description & Context */}
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                            <span className={`font-medium ${tx.is_voided ? 'line-through text-zinc-400' : 'text-zinc-900 dark:text-zinc-100'}`}>
                               {tx.note || '(No note)'}
                             </span>
+
+                            {tx.is_voided && (
+                              <span className="rounded bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-500 font-mono">
+                                Reversed / Voided
+                              </span>
+                            )}
 
                             {tx.corrected_from && (
                               <button
                                 onClick={() => handleShowTrail(tx.id)}
-                                className="inline-flex items-center gap-1 rounded bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40 hover:bg-amber-100"
+                                title="Click to view full reversal and replacement trail"
+                                className="inline-flex items-center gap-1 rounded bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40 hover:bg-amber-100 cursor-pointer"
                               >
                                 <History className="h-2.5 w-2.5" />
                                 Corrected
@@ -285,7 +329,7 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
                               -{formatTaka(displayAmt)}
                             </span>
                           )}
-                          {(isTransfer || isSweep) && (
+                          {(isTransfer || isSweep || tx.kind === 'reversal') && (
                             <span className="text-zinc-700 dark:text-zinc-300">
                               {formatTaka(displayAmt)}
                             </span>
@@ -304,27 +348,29 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
                               <button
                                 onClick={() => setReceiptTx(tx)}
                                 title="View and download member fee receipt"
-                                className="rounded p-1 text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/60"
+                                className="rounded p-1 text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 cursor-pointer"
                               >
                                 <Receipt className="h-3.5 w-3.5" />
                               </button>
                             )}
-                            {!isOpening && (
+                            {!isOpening && tx.kind !== 'reversal' && (
                               <button
                                 onClick={() => setFixEntry(tx)}
-                                title="Fix Amount (records reversal and corrected replacement)"
-                                className="rounded p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                                title="Fix Amount: Writes atomic mirror reversal + replacement entry. Note: cannot change transaction kind."
+                                className="rounded p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
                               >
                                 <History className="h-3.5 w-3.5" />
                               </button>
                             )}
-                            <button
-                              onClick={() => setEditLabelEntry(tx)}
-                              title="Edit description or tags in-place"
-                              className="rounded p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                            >
-                              <Edit2 className="h-3.5 w-3.5" />
-                            </button>
+                            {tx.kind !== 'reversal' && (
+                              <button
+                                onClick={() => setEditLabelEntry(tx)}
+                                title="Edit Labels: Updates description, tag, or cost-center in-place without altering balances."
+                                className="rounded p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
+                              >
+                                <Edit2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
