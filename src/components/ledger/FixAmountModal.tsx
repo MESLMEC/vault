@@ -37,6 +37,14 @@ export const FixAmountModal: React.FC<FixAmountModalProps> = ({
       return;
     }
 
+    if (!newNote.trim()) {
+      onError({
+        reason: 'Explanation Note Required',
+        remediation: 'Please provide a non-blank note explaining why the amount is being corrected.',
+      });
+      return;
+    }
+
     setLoading(true);
     try {
       // Re-sign according to original line direction
@@ -48,7 +56,8 @@ export const FixAmountModal: React.FC<FixAmountModalProps> = ({
       await api.fixAmount({
         transactionId: transaction.id,
         newLines: updatedLines,
-        newNote,
+        newNote: newNote.trim(),
+        occurred_on: transaction.occurred_on,
         by: recordedBy,
       });
 
@@ -73,9 +82,14 @@ export const FixAmountModal: React.FC<FixAmountModalProps> = ({
         </div>
       }
     >
-      <div className="rounded-lg bg-zinc-50 dark:bg-zinc-800/40 p-3 border border-zinc-100 dark:border-zinc-800 text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
-        <strong>Immutable Ledger Rule: </strong>
-        The app will atomically record an exact reversal of the original entry, then append the corrected entry. Nothing is silently overwritten, and the complete audit trail is preserved.
+      <div className="rounded-lg bg-zinc-50 dark:bg-zinc-800/40 p-3 border border-zinc-100 dark:border-zinc-800 text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed space-y-1.5">
+        <div>
+          <strong className="text-zinc-800 dark:text-zinc-200">Immutable Ledger Rule: </strong>
+          The app will atomically record an exact mirror reversal of the original entry, then append the corrected replacement entry. Nothing is overwritten in place.
+        </div>
+        <div className="text-[11px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 p-1.5 rounded border border-amber-200 dark:border-amber-900/50">
+          <strong>Notice: </strong>A wrong transaction kind (e.g. deposit recorded instead of expense) cannot be changed via Amount Fix. Only the numerical taka value is corrected. To edit metadata without creating a reversal, use <em>Edit Labels</em>.
+        </div>
       </div>
 
       <form onSubmit={handleFix} className="mt-4 space-y-4">

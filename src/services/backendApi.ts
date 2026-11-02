@@ -52,8 +52,8 @@ export interface RenameEnvelopeRequest {
 }
 
 export interface EnvelopeSettingsRequest {
-  target_cap?: number | null;
-  alloc_priority?: number | null;
+  target_cap: number | null;
+  alloc_priority: number | null;
 }
 
 export interface CostCenterOut {
@@ -211,13 +211,13 @@ export interface EntryCreated {
 
 export interface DepositRequest {
   amount: number;
-  envelope_id?: number | null;
   occurred_on: string;
-  cost_center_id?: number | null;
-  member_id?: number | null;
-  source?: IncomeSource | null;
+  source: IncomeSource;
+  note?: string;
   tag?: string | null;
-  note?: string | null;
+  cost_center_id?: number | null;
+  member_id?: number;
+  envelope_id?: number;
 }
 
 export interface ExpenseRequest {
@@ -255,10 +255,10 @@ export interface TransferCreated {
 export interface RefundRequest {
   amount: number;
   occurred_on: string;
+  member_id: number;
   cost_center_id?: number | null;
-  member_id?: number | null;
   tag?: string | null;
-  note?: string | null;
+  note?: string;
 }
 
 export interface RefundCreated {
@@ -270,7 +270,7 @@ export interface RefundCreated {
 export interface FixAmountRequest {
   amount: number;
   occurred_on: string;
-  note?: string | null;
+  note: string;
 }
 
 export interface FixAmountCreated {
@@ -821,7 +821,10 @@ export const backendApi = {
   async updateEnvelopeSettings(envelopeId: number, data: EnvelopeSettingsRequest): Promise<EnvelopeOut> {
     return request<EnvelopeOut>(`/api/v1/envelopes/${envelopeId}/settings`, {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify({
+        target_cap: data.target_cap !== undefined ? data.target_cap : null,
+        alloc_priority: data.alloc_priority !== undefined ? data.alloc_priority : null,
+      }),
     });
   },
 
@@ -923,9 +926,37 @@ export const backendApi = {
   },
 
   async recordDeposit(data: DepositRequest): Promise<EntryCreated> {
+    if (!data.source) {
+      throw new Error('source is required for deposits.');
+    }
+    const payload: Record<string, any> = {
+      amount: data.amount,
+      occurred_on: data.occurred_on,
+      source: data.source,
+      note: data.note ?? '',
+    };
+    if (data.tag !== undefined && data.tag !== null) payload.tag = data.tag;
+    if (data.cost_center_id !== undefined && data.cost_center_id !== null) {
+      payload.cost_center_id = data.cost_center_id;
+    }
+    if (data.source === 'weekly_fee') {
+      if (!data.member_id) {
+        throw new Error('member_id is required when source is weekly_fee.');
+      }
+      payload.member_id = data.member_id;
+      // envelope_id must be omitted
+    } else {
+      // member_id is forbidden
+      if (data.member_id !== undefined && data.member_id !== null) {
+        throw new Error('member_id is forbidden when source is not weekly_fee.');
+      }
+      if (data.envelope_id !== undefined && data.envelope_id !== null) {
+        payload.envelope_id = data.envelope_id;
+      }
+    }
     return request<EntryCreated>('/api/v1/deposits', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     });
   },
 
@@ -944,16 +975,36 @@ export const backendApi = {
   },
 
   async recordRefund(data: RefundRequest): Promise<RefundCreated> {
+    if (!data.member_id) {
+      throw new Error('member_id is strictly required for refunds.');
+    }
+    const payload: Record<string, any> = {
+      amount: data.amount,
+      occurred_on: data.occurred_on,
+      member_id: data.member_id,
+      note: data.note ?? '',
+    };
+    if (data.tag !== undefined && data.tag !== null) payload.tag = data.tag;
+    if (data.cost_center_id !== undefined && data.cost_center_id !== null) {
+      payload.cost_center_id = data.cost_center_id;
+    }
     return request<RefundCreated>('/api/v1/refunds', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     });
   },
 
   async fixAmount(entryId: number, data: FixAmountRequest): Promise<FixAmountCreated> {
+    if (!data.note || !data.note.trim()) {
+      throw new Error('A non-blank note is required when fixing an entry amount.');
+    }
     return request<FixAmountCreated>(`/api/v1/entries/${entryId}/fix-amount`, {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify({
+        amount: data.amount,
+        occurred_on: data.occurred_on,
+        note: data.note.trim(),
+      }),
     });
   },
 
@@ -1022,12 +1073,14 @@ export const backendApi = {
     return request<AssetStateOut[]>('/api/v1/assets/replacement-queue');
   },
 
-  async getAssetActivity(params?: { from_date?: string; to_date?: string }): Promise<AssetActivityOut[]> {
+  async getAssetActivity(params: { from_date: string; to_date: string }): Promise<AssetActivityOut[]> {
+    if (!params?.from_date || !params?.to_date) {
+      throw new Error('from_date and to_date are required query parameters for asset activity.');
+    }
     const query = new URLSearchParams();
-    if (params?.from_date) query.set('from_date', params.from_date);
-    if (params?.to_date) query.set('to_date', params.to_date);
-    const qs = query.toString() ? `?${query.toString()}` : '';
-    return request<AssetActivityOut[]>(`/api/v1/assets/activity${qs}`);
+    query.set('from_date', params.from_date);
+    query.set('to_date', params.to_date);
+    return request<AssetActivityOut[]>(`/api/v1/assets/activity?${query.toString()}`);
   },
 
   async recordAssetEvent(assetId: number, data: AssetEventRequest): Promise<AssetEventOut> {

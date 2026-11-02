@@ -77,6 +77,11 @@ export const EditLabelModal: React.FC<EditLabelModalProps> = ({
         </div>
       }
     >
+      <div className="rounded-lg bg-blue-50/80 dark:bg-blue-950/40 p-3 mb-4 border border-blue-200 dark:border-blue-900/50 text-xs text-blue-900 dark:text-blue-200 leading-relaxed">
+        <strong>In-Place Metadata Update: </strong>
+        Labels (description, tag, occurred date, event link) are updated in-place on this entry. Envelope balances and transaction amounts remain unchanged. To correct the money amount, use <em>Fix Amount</em> instead.
+      </div>
+
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
