@@ -357,7 +357,7 @@ export const AppShell: React.FC<AppShellProps> = ({
   const handleResetSeed = async () => {
     const ok = await confirm({
       title: 'Reset Local Database',
-      description: 'Clear all local records and reset to a clean blank database? This will clear all local dummy/sample changes.',
+      description: 'Clear all local records and reset to a clean blank database? This will restore the database to a fresh state.',
       confirmLabel: 'Reset Database',
       variant: 'danger',
     });

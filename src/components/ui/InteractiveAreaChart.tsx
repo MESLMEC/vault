@@ -38,35 +38,11 @@ const EASE_IN_OUT = [0.77, 0, 0.175, 1] as const;
 const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), max);
 const f = (n: number) => Math.round(n * 100) / 100;
 
-/* ------------------------------- Demo data --------------------------------- */
+/* ------------------------------- Empty data --------------------------------- */
 
 const DAY = 86_400_000;
-const END = Date.now();
 
-function rng(seed: number) {
-  return () => {
-    seed = (seed + 0x6d2b79f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-export function makeSeries(n: number, seed: number, start: number, drift: number, vol: number): ChartPoint[] {
-  const r = rng(seed);
-  let v = start;
-  return Array.from({ length: n }, (_, i) => {
-    v += drift + (r() - 0.5) * vol + Math.sin(i / (n / 6)) * vol * 0.15;
-    v = Math.max(v, start * 0.4);
-    return { date: END - (n - 1 - i) * DAY, value: Math.round(v) };
-  });
-}
-
-export const DEFAULT_AREA_CHART_DATA: AreaChartData = {
-  '7D': makeSeries(7, 11, 11800, 180, 900),
-  '30D': makeSeries(30, 7, 9200, 95, 1100),
-  '1Y': makeSeries(365, 3, 4200, 28, 700),
-};
+export const EMPTY_AREA_CHART_DATA: AreaChartData = {};
 
 /* --------------------------------- Maths ----------------------------------- */
 
@@ -153,7 +129,7 @@ const axisFmt = (len: number, isNarrow = false) =>
 /* -------------------------------- Component -------------------------------- */
 
 export function InteractiveAreaChart({
-  data = DEFAULT_AREA_CHART_DATA,
+  data = EMPTY_AREA_CHART_DATA,
   defaultRange = '30D',
   title = 'Revenue',
   height = 280,
@@ -323,6 +299,18 @@ export function InteractiveAreaChart({
   const xLabels = [...new Set(
     Array.from({ length: Math.min(labelCount, len) }, (_, j) => Math.round((j / Math.max(1, labelCount - 1)) * (len - 1)))
   )];
+
+  if (keys.length === 0) {
+    return (
+      <div
+        className={`w-full flex flex-col items-center justify-center text-center text-muted-foreground p-8 ${className}`}
+        style={{ height }}
+      >
+        <p className="text-sm font-medium text-foreground">No cash reserve activity</p>
+        <p className="text-xs text-muted-foreground mt-1">Real database transactions will show reserve progression over time.</p>
+      </div>
+    );
+  }
 
   return (
     <div className={`w-full ${className}`}>

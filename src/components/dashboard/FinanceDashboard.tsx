@@ -266,6 +266,9 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
       : new Date();
     today.setHours(23, 59, 59, 999);
     const totalLiquid = envelopes.reduce((acc, env) => acc + (env.active ? env.balance : 0), 0);
+    if (valid.length === 0 && totalLiquid === 0) {
+      return {} as AreaChartData;
+    }
 
     const buildDaysSeries = (numDays: number): ChartPoint[] => {
       const points: ChartPoint[] = [];

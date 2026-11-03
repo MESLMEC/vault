@@ -106,14 +106,14 @@ export const api = {
         const mode = authStorage.getMode();
         if ((mode === 'engine' || (mode === 'auto' && isOffline)) && credentials.username) {
           if (credentials.password === 'change-me' || credentials.password.length >= 6) {
-            const mockToken: TokenResponse = {
+            const localToken: TokenResponse = {
               access_token: `local_session_${Date.now()}`,
               token_type: 'bearer',
               expires_at: new Date(Date.now() + 72 * 3600 * 1000).toISOString(),
             };
-            authStorage.setToken(mockToken.access_token);
+            authStorage.setToken(localToken.access_token);
             authStorage.setUsername(credentials.username);
-            return mockToken;
+            return localToken;
           } else {
             const credErr: any = new Error('Invalid credentials.');
             credErr.reason = 'Invalid credentials for local session (default: change-me)';
