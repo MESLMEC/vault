@@ -79,10 +79,10 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const [recordedBy, setRecordedBy] = useState('Treasurer');
 
   // Deposit specific
-  const [source, setSource] = useState<IncomeSource>('weekly_fee');
+  const [source, setSource] = useState<IncomeSource>('admin_grant');
   const [memberId, setMemberId] = useState<string>('');
 
-  // Expense / Transfer specific
+  // Envelope selection: used as Destination Envelope for Deposit, Paid From for Expense, Source for Transfer/Sweep
   const [selectedEnvelopeId, setSelectedEnvelopeId] = useState<string>('');
   const [targetEnvelopeId, setTargetEnvelopeId] = useState<string>('');
 
@@ -155,7 +155,15 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
         // Set default envelope
         const nonPool = envs.find((e) => !e.is_pool && e.active);
         const pool = envs.find((e) => e.is_pool);
-        if (nonPool && !selectedEnvelopeId) setSelectedEnvelopeId(String(nonPool.id));
+        if (initialType === 'deposit') {
+          if (source === 'weekly_fee' && pool) {
+            setSelectedEnvelopeId(String(pool.id));
+          } else if (!selectedEnvelopeId) {
+            setSelectedEnvelopeId('');
+          }
+        } else {
+          if (nonPool && !selectedEnvelopeId) setSelectedEnvelopeId(String(nonPool.id));
+        }
         if (pool && !targetEnvelopeId) setTargetEnvelopeId(String(pool.id));
       } catch (e) {
         console.error('Failed to load transaction modal dependencies:', e);
@@ -214,7 +222,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       matchedEnv = envelopes.find((e) => e.name.toLowerCase().includes('ops') || e.name.toLowerCase().includes('admin'));
     }
 
-    if (matchedEnv && (kind === 'expense' || kind === 'sweep' || kind === 'transfer')) {
+    if (matchedEnv && (kind === 'expense' || kind === 'sweep' || kind === 'transfer' || kind === 'deposit')) {
       setSelectedEnvelopeId(String(matchedEnv.id));
       setEnvelopeAutoSelectedHint(`Auto-matched envelope "${matchedEnv.name}" to ${cc.kind} cost center.`);
     } else {
@@ -252,6 +260,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     setTag('');
     setCostCenterId('');
     setMemberId('');
+    setSelectedEnvelopeId('');
     setDate(new Date().toISOString().split('T')[0]);
     setEnvelopeAutoSelectedHint(null);
   };
@@ -280,6 +289,18 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     const toEnvId = parseInt(targetEnvelopeId, 10);
 
     if (kind === 'deposit') {
+      if (!fromEnvId) {
+        errors.push('Destination envelope is required. Please select an envelope name.');
+      } else {
+        const env = envelopes.find((e) => e.id === fromEnvId);
+        if (!env) {
+          errors.push('The selected destination envelope does not exist.');
+        } else if (!env.active) {
+          errors.push(`Selected envelope "${env.name}" is inactive.`);
+        } else if (source === 'weekly_fee' && !env.is_pool) {
+          errors.push('Weekly fee deposits must go to the Unallocated General pool.');
+        }
+      }
       if (source === 'weekly_fee' && !memId) {
         errors.push('Weekly fee deposits must be linked to a member. Please select a paying member.');
       }
@@ -373,16 +394,17 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       let recordedTx: any = null;
 
       if (kind === 'deposit') {
+        const destEnvId = parseInt(selectedEnvelopeId, 10);
         recordedTx = await api.recordTransaction({
           kind: 'deposit',
           occurred_on: date,
           recorded_by: recordedBy,
-          note: note.trim() || (source === 'weekly_fee' ? 'Weekly member fee' : 'Deposit into pool'),
+          note: note.trim() || (source === 'weekly_fee' ? 'Weekly member fee' : (selectedEnvObj ? `Deposit into ${selectedEnvObj.name}` : 'Deposit into pool')),
           tag: tag.trim() || (source === 'weekly_fee' ? 'fees' : null),
           cost_center_id: ccId,
           source,
           member_id: source === 'weekly_fee' ? memId : null,
-          lines: [{ envelope_id: pool.id, amount: amt }],
+          lines: [{ envelope_id: destEnvId, amount: amt }],
         });
       } else if (kind === 'expense') {
         recordedTx = await api.recordTransaction({
@@ -435,7 +457,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       localStorage.removeItem(DRAFT_KEY);
 
       const memObj = members.find((m) => m.id === memId);
-      const envObj = envelopes.find((e) => e.id === fromEnvId);
+      const envObj = envelopes.find((e) => e.id === (kind === 'deposit' ? parseInt(selectedEnvelopeId, 10) : fromEnvId));
 
       setCreatedResult({
         id: recordedTx.id,
@@ -473,6 +495,9 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     setAmount('');
     setNote('');
     setTag('');
+    setSelectedEnvelopeId('');
+    setCostCenterId('');
+    setMemberId('');
     setPreflightErrors([]);
     setPreflightWarning(null);
   };
@@ -534,7 +559,13 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             <div className="flex rounded-lg bg-zinc-100 dark:bg-zinc-800 p-1 text-xs font-medium">
               <button
                 type="button"
-                onClick={() => setKind('deposit')}
+                onClick={() => {
+                  setKind('deposit');
+                  if (source === 'weekly_fee') {
+                    const pool = envelopes.find((e) => e.is_pool);
+                    if (pool) setSelectedEnvelopeId(String(pool.id));
+                  }
+                }}
                 className={`flex-1 py-1.5 rounded-md flex items-center justify-center gap-1 transition-all ${
                   kind === 'deposit'
                     ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-sm'
@@ -546,7 +577,13 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => setKind('expense')}
+                onClick={() => {
+                  setKind('expense');
+                  if (!selectedEnvelopeId) {
+                    const nonPool = envelopes.find((e) => !e.is_pool && e.active) || envelopes[0];
+                    if (nonPool) setSelectedEnvelopeId(String(nonPool.id));
+                  }
+                }}
                 className={`flex-1 py-1.5 rounded-md flex items-center justify-center gap-1 transition-all ${
                   kind === 'expense'
                     ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-sm'
@@ -681,15 +718,22 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                       </label>
                       <select
                         value={source}
-                        onChange={(e) => setSource(e.target.value as IncomeSource)}
+                        onChange={(e) => {
+                          const newSource = e.target.value as IncomeSource;
+                          setSource(newSource);
+                          if (newSource === 'weekly_fee') {
+                            const pool = envelopes.find((env) => env.is_pool);
+                            if (pool) setSelectedEnvelopeId(String(pool.id));
+                          }
+                        }}
                         className="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800 px-2.5 py-2 text-xs text-zinc-900 dark:text-zinc-100 outline-none"
                       >
-                        <option value="weekly_fee">Weekly Member Fee</option>
                         <option value="admin_grant">Admin / University Grant</option>
                         <option value="sponsorship">Corporate Sponsorship</option>
                         <option value="registration">Event / Workshop Registration</option>
                         <option value="donation">Alumni / Patron Donation</option>
                         <option value="other">Other Income</option>
+                        <option value="weekly_fee">Weekly Member Fee</option>
                       </select>
                     </div>
 
@@ -712,16 +756,44 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                           ))}
                         </select>
                       </div>
-                    ) : (
-                      <div>
+                    ) : null}
+
+                    <div className={source === 'weekly_fee' ? 'col-span-2' : ''}>
+                      <div className="flex items-center justify-between">
                         <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                          Destination Pot
+                          Destination Envelope (by Name) <span className="text-rose-500">*</span>
                         </label>
-                        <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-400 py-2">
-                          Automatically deposits into <strong>General Pool</strong>
-                        </div>
+                        {selectedEnvObj && (
+                          <span className="text-[11px] font-mono text-zinc-500">
+                            Balance: <strong>{formatTaka(selectedEnvObj.balance)}</strong>
+                          </span>
+                        )}
                       </div>
-                    )}
+                      <select
+                        required
+                        value={selectedEnvelopeId}
+                        onChange={(e) => setSelectedEnvelopeId(e.target.value)}
+                        disabled={source === 'weekly_fee'}
+                        className="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800 px-2.5 py-2 text-xs text-zinc-900 dark:text-zinc-100 outline-none disabled:opacity-75 disabled:cursor-not-allowed"
+                      >
+                        <option value="">Select Envelope Name...</option>
+                        {envelopes.map((e) => (
+                          <option key={e.id} value={e.id}>
+                            {e.name} {e.is_pool ? '(General Pool)' : ''} — {formatTaka(e.balance)}
+                          </option>
+                        ))}
+                      </select>
+                      {source === 'weekly_fee' ? (
+                        <div className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                          Weekly member fees are required by constitution to land in the Unallocated General pool.
+                        </div>
+                      ) : envelopeAutoSelectedHint ? (
+                        <div className="mt-1 text-[11px] text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
+                          <Sparkles className="h-3 w-3" />
+                          <span>{envelopeAutoSelectedHint}</span>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               )}
@@ -1082,11 +1154,11 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                   Projected Envelope Balance Effect
                 </span>
                 <div className="space-y-1.5 text-xs font-mono">
-                  {kind === 'deposit' && (
+                  {kind === 'deposit' && selectedEnvObj && (
                     <div className="flex justify-between items-center bg-zinc-50 dark:bg-zinc-800/40 p-2 rounded">
-                      <span className="text-zinc-600 dark:text-zinc-300">General Pool</span>
+                      <span className="text-zinc-600 dark:text-zinc-300">{selectedEnvObj.name}</span>
                       <span className="text-emerald-600 dark:text-emerald-400">
-                        {formatTaka(poolEnv?.balance ?? 0)} → {formatTaka((poolEnv?.balance ?? 0) + parsedAmt)} (+{formatTaka(parsedAmt)})
+                        {formatTaka(selectedEnvObj.balance)} → {formatTaka(selectedEnvObj.balance + parsedAmt)} (+{formatTaka(parsedAmt)})
                       </span>
                     </div>
                   )}

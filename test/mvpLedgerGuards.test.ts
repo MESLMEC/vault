@@ -84,4 +84,31 @@ describe('MVP Ledger Guards & UI Preflight Checks', () => {
     assert.strictEqual(allTransactions.some((e) => e.id === reversal.id), true);
     assert.strictEqual(allTransactions.some((e) => e.id === replacement.id), true);
   });
+
+  it('records deposit targeting envelope by name/id and credits that envelope', () => {
+    const engine = new FinanceEngine(getTestSeedData());
+    const balancesBefore = engine.getEnvelopeBalances();
+    const targetEnv = balancesBefore.find((b) => b.name === 'Components & Stash');
+    assert(targetEnv, 'Components & Stash envelope should exist');
+    const initialBal = targetEnv.balance;
+
+    const depositTx = engine.recordTransaction({
+      kind: 'deposit',
+      occurred_on: '2026-10-20',
+      recorded_by: 'Treasurer',
+      source: 'admin_grant',
+      note: 'Lab grant for components',
+      lines: [{ envelope_id: targetEnv.id, amount: 2500 }],
+    });
+
+    assert.strictEqual(depositTx.kind, 'deposit');
+    const entry = engine.getEntriesCurrent().find((e) => e.id === depositTx.id);
+    assert(entry);
+    assert.strictEqual(entry.lines[0].envelope_id, targetEnv.id);
+    assert.strictEqual(entry.lines[0].amount, 2500);
+
+    const balancesAfter = engine.getEnvelopeBalances();
+    const updatedEnv = balancesAfter.find((b) => b.id === targetEnv.id)!;
+    assert.strictEqual(updatedEnv.balance, initialBal + 2500);
+  });
 });

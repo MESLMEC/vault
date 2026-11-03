@@ -14,6 +14,7 @@ import {
   PieChart as PieChartIcon,
   BarChart3,
   Activity,
+  Plus,
   PlusCircle,
   Clock,
   Sparkles,
@@ -409,29 +410,11 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
         <div className="flex items-center gap-2">
           <Button
             size="sm"
-            variant="outline"
             onClick={() => onQuickRecord('deposit')}
-            className="text-xs gap-1.5"
+            className="text-xs gap-1.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 shadow-sm"
           >
-            <ArrowDownRight className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>Money In</span>
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onQuickRecord('expense')}
-            className="text-xs gap-1.5"
-          >
-            <ArrowUpRight className="h-3.5 w-3.5 text-red-500" />
-            <span>Money Out</span>
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => onQuickRecord('fee')}
-            className="text-xs gap-1.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900"
-          >
-            <Users className="h-3.5 w-3.5" />
-            <span>Collect Fees</span>
+            <Plus className="h-3.5 w-3.5" />
+            <span>Record Transaction</span>
           </Button>
         </div>
       </div>
