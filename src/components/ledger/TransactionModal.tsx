@@ -154,15 +154,24 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
         // Set default envelope
         const nonPool = envs.find((e) => !e.is_pool && e.active);
-        const pool = envs.find((e) => e.is_pool);
+        const pool = envs.find((e) => e.is_pool) || envs[0];
+        const defaultEnv = nonPool || pool;
+
         if (initialType === 'deposit') {
           if (source === 'weekly_fee' && pool) {
+            setSelectedEnvelopeId(String(pool.id));
+          } else if (!selectedEnvelopeId && !nonPool && pool) {
+            // When only pool exists, default to pool
             setSelectedEnvelopeId(String(pool.id));
           } else if (!selectedEnvelopeId) {
             setSelectedEnvelopeId('');
           }
         } else {
-          if (nonPool && !selectedEnvelopeId) setSelectedEnvelopeId(String(nonPool.id));
+          // For expense (or transfer/sweep/refund):
+          // If nonPool exists, use nonPool; otherwise, default to the unallocated pool!
+          if (!selectedEnvelopeId && defaultEnv) {
+            setSelectedEnvelopeId(String(defaultEnv.id));
+          }
         }
         if (pool && !targetEnvelopeId) setTargetEnvelopeId(String(pool.id));
       } catch (e) {
@@ -305,7 +314,11 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
         errors.push('Weekly fee deposits must be linked to a member. Please select a paying member.');
       }
     } else if (kind === 'expense') {
-      const env = envelopes.find((e) => e.id === fromEnvId);
+      let env = envelopes.find((e) => e.id === fromEnvId);
+      if (!env && pool) {
+        env = pool;
+        setSelectedEnvelopeId(String(pool.id));
+      }
       if (!env) {
         errors.push('Please select a valid source envelope.');
       } else {
@@ -407,6 +420,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
           lines: [{ envelope_id: destEnvId, amount: amt }],
         });
       } else if (kind === 'expense') {
+        const sourceEnvId = fromEnvId || parseInt(selectedEnvelopeId, 10) || pool?.id || 1;
         recordedTx = await api.recordTransaction({
           kind: 'expense',
           occurred_on: date,
@@ -416,7 +430,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
           cost_center_id: ccId,
           source: null,
           member_id: null,
-          lines: [{ envelope_id: fromEnvId, amount: -amt }],
+          lines: [{ envelope_id: sourceEnvId, amount: -amt }],
         });
       } else if (kind === 'transfer') {
         recordedTx = await api.recordTransaction({
@@ -505,9 +519,11 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   if (!isOpen) return null;
 
   // Selected envelope helpers for review
-  const selectedEnvObj = envelopes.find((e) => String(e.id) === selectedEnvelopeId);
-  const targetEnvObj = envelopes.find((e) => String(e.id) === targetEnvelopeId);
   const poolEnv = envelopes.find((e) => e.is_pool) || envelopes[0];
+  const selectedEnvObj =
+    envelopes.find((e) => String(e.id) === selectedEnvelopeId) ||
+    (kind === 'expense' ? poolEnv : undefined);
+  const targetEnvObj = envelopes.find((e) => String(e.id) === targetEnvelopeId);
   const selectedMember = members.find((m) => String(m.id) === memberId);
   const selectedCC = costCenters.find((c) => String(c.id) === costCenterId);
   const parsedAmt = parseInt(amount, 10) || 0;
@@ -579,9 +595,9 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 type="button"
                 onClick={() => {
                   setKind('expense');
-                  if (!selectedEnvelopeId) {
-                    const nonPool = envelopes.find((e) => !e.is_pool && e.active) || envelopes[0];
-                    if (nonPool) setSelectedEnvelopeId(String(nonPool.id));
+                  if (!selectedEnvelopeId || !envelopes.some((e) => String(e.id) === selectedEnvelopeId)) {
+                    const defaultEnv = envelopes.find((e) => !e.is_pool && e.active) || envelopes.find((e) => e.is_pool) || envelopes[0];
+                    if (defaultEnv) setSelectedEnvelopeId(String(defaultEnv.id));
                   }
                 }}
                 className={`flex-1 py-1.5 rounded-md flex items-center justify-center gap-1 transition-all ${
@@ -813,16 +829,21 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                       )}
                     </div>
                     <select
-                      value={selectedEnvelopeId}
+                      value={selectedEnvelopeId || (poolEnv ? String(poolEnv.id) : '')}
                       onChange={(e) => setSelectedEnvelopeId(e.target.value)}
                       className="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800 px-2.5 py-2 text-xs text-zinc-900 dark:text-zinc-100 outline-none"
                     >
                       {envelopes.map((e) => (
                         <option key={e.id} value={e.id}>
-                          {e.name} {e.is_pool ? '(General Pool)' : ''} — {formatTaka(e.balance)}
+                          {e.name} {e.is_pool ? '(Unallocated Pool)' : ''} — {formatTaka(e.balance)}
                         </option>
                       ))}
                     </select>
+                    {!envelopes.some((e) => !e.is_pool && e.active) && (
+                      <div className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                        No custom envelopes created yet; deducting by default from the <strong>Unallocated General Pool</strong>.
+                      </div>
+                    )}
                     {envelopeAutoSelectedHint && (
                       <div className="mt-1 text-[11px] text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
                         <Sparkles className="h-3 w-3" />

@@ -111,4 +111,29 @@ describe('MVP Ledger Guards & UI Preflight Checks', () => {
     const updatedEnv = balancesAfter.find((b) => b.id === targetEnv.id)!;
     assert.strictEqual(updatedEnv.balance, initialBal + 2500);
   });
+
+  it('deducts from unallocated pool by default when recording expense with no other envelopes', () => {
+    const data = getTestSeedData();
+    data.envelopes = data.envelopes.filter((e) => e.is_pool);
+    const engine = new FinanceEngine(data);
+    const pool = engine.getPoolEnvelope();
+    const initialPoolBal = engine.getEnvelopeBalances().find((b) => b.id === pool.id)!.balance;
+
+    const expenseTx = engine.recordTransaction({
+      kind: 'expense',
+      occurred_on: '2026-10-20',
+      recorded_by: 'Treasurer',
+      note: 'Lab tea and stationery',
+      lines: [{ envelope_id: pool.id, amount: -350 }],
+    });
+
+    assert.strictEqual(expenseTx.kind, 'expense');
+    const entry = engine.getEntriesCurrent().find((e) => e.id === expenseTx.id);
+    assert(entry);
+    assert.strictEqual(entry.lines[0].envelope_id, pool.id);
+    assert.strictEqual(entry.lines[0].amount, -350);
+
+    const updatedPool = engine.getEnvelopeBalances().find((b) => b.id === pool.id)!;
+    assert.strictEqual(updatedPool.balance, initialPoolBal - 350);
+  });
 });
