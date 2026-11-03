@@ -39,6 +39,7 @@ export interface EnvelopeOut {
   target_cap: number | null;
   alloc_priority: number | null;
   active: boolean;
+  balance?: number;
 }
 
 export interface CreateEnvelopeRequest {
