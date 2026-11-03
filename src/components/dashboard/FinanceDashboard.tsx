@@ -123,7 +123,7 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
   onNavigate,
   onQuickRecord,
 }) => {
-  const [timelineMode, setTimelineMode] = useState<'monthly' | 'cumulative'>('cumulative');
+  const [timelineMode, setTimelineMode] = useState<'monthly' | 'cumulative'>('monthly');
   const [timeRange, setTimeRange] = useState<'all' | '6m' | '30d'>('all');
   const [receiptTx, setReceiptTx] = useState<LedgerEntryView | null>(null);
 
@@ -251,16 +251,24 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
     valid.forEach((tx) => {
       let net = 0;
       if (tx.kind === 'deposit' || tx.kind === 'opening') {
-        net = tx.lines.reduce((s, l) => (l.amount > 0 ? s + l.amount : s), 0);
+        net = (tx.lines || []).reduce((s, l) => (l.amount > 0 ? s + l.amount : s), 0);
       } else if (tx.kind === 'expense') {
-        net = -tx.lines.reduce((s, l) => (l.amount < 0 ? s + Math.abs(l.amount) : s), 0);
+        net = -(tx.lines || []).reduce((s, l) => (l.amount < 0 ? s + Math.abs(l.amount) : s), 0);
       }
       dayDeltaMap.set(tx.occurred_on, (dayDeltaMap.get(tx.occurred_on) || 0) + net);
     });
 
-    const today = new Date();
+    // Anchor to latest transaction date if all historical entries occurred earlier than 30 days ago
+    const latestTxDateStr = valid.length > 0 ? valid[valid.length - 1].occurred_on : toLocalDateStr(new Date());
+    const latestTxDate = new Date(latestTxDateStr + 'T23:59:59');
+    const today = (valid.length > 0 && (new Date().getTime() - latestTxDate.getTime()) > 30 * 86400000)
+      ? latestTxDate
+      : new Date();
     today.setHours(23, 59, 59, 999);
     const totalLiquid = envelopes.reduce((acc, env) => acc + (env.active ? env.balance : 0), 0);
+    if (valid.length === 0 && totalLiquid === 0) {
+      return {} as AreaChartData;
+    }
 
     const buildDaysSeries = (numDays: number): ChartPoint[] => {
       const points: ChartPoint[] = [];
@@ -670,7 +678,7 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
           {timelineMode === 'cumulative' ? (
             <InteractiveAreaChart
               data={velocityChartData}
-              defaultRange="30D"
+              defaultRange="ALL"
               title="Liquid Cash Reserve"
               height={300}
               currencySymbol="৳"

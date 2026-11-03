@@ -106,14 +106,14 @@ export const api = {
         const mode = authStorage.getMode();
         if ((mode === 'engine' || (mode === 'auto' && isOffline)) && credentials.username) {
           if (credentials.password === 'change-me' || credentials.password.length >= 6) {
-            const mockToken: TokenResponse = {
+            const localToken: TokenResponse = {
               access_token: `local_session_${Date.now()}`,
               token_type: 'bearer',
               expires_at: new Date(Date.now() + 72 * 3600 * 1000).toISOString(),
             };
-            authStorage.setToken(mockToken.access_token);
+            authStorage.setToken(localToken.access_token);
             authStorage.setUsername(credentials.username);
-            return mockToken;
+            return localToken;
           } else {
             const credErr: any = new Error('Invalid credentials.');
             credErr.reason = 'Invalid credentials for local session (default: change-me)';
@@ -289,29 +289,58 @@ export const api = {
   async getEnvelopeBalances(): Promise<EnvelopeBalance[]> {
     if (this.isBackendMode() && authStorage.getToken()) {
       try {
-        const [envelopes, context] = await Promise.all([
+        const [envelopes, context, rawLines] = await Promise.all([
           backendApi.getEnvelopes(),
-          backendApi.getAllocationContext(),
+          backendApi.getAllocationContext().catch(() => null),
+          backendApi.getLedgerLines().catch(() => []),
         ]);
+
+        const lineSumMap = new Map<number, number>();
+        for (const l of rawLines) {
+          lineSumMap.set(l.envelope_id, (lineSumMap.get(l.envelope_id) || 0) + l.amount);
+        }
+
+        const engineBalMap = new Map(getEngine().getEnvelopeBalances().map((b) => [b.id, b.balance]));
+
         let suggestions: Array<{ envelope_id: number; balance: number }> = [];
-        try {
-          suggestions = await backendApi.getAllocationSuggestion({ amount: 1 });
-        } catch {
-          // ignore draft allocation errors if empty/unavailable
+        if (rawLines.length === 0) {
+          try {
+            suggestions = await backendApi.getAllocationSuggestion({ amount: 1 });
+          } catch {
+            // ignore draft allocation errors if empty/unavailable
+          }
         }
         const balMap = new Map<number, number>();
         for (const s of suggestions) {
           balMap.set(s.envelope_id, s.balance);
         }
-        return envelopes.map((env) => ({
-          id: env.id,
-          name: env.name,
-          balance: env.is_pool ? context.pool_balance : (balMap.get(env.id) ?? 0),
-          target_cap: env.target_cap,
-          alloc_priority: env.alloc_priority,
-          is_pool: env.is_pool,
-          active: env.active,
-        }));
+
+        return envelopes.map((env) => {
+          let balance = 0;
+          if (env.balance !== undefined && env.balance !== null) {
+            balance = env.balance;
+          } else if (rawLines.length > 0) {
+            balance = env.is_pool
+              ? (context?.pool_balance ?? (lineSumMap.get(env.id) || 0))
+              : (lineSumMap.get(env.id) || 0);
+          } else if (env.is_pool && context?.pool_balance !== undefined) {
+            balance = context.pool_balance;
+          } else if (engineBalMap.has(env.id) && (engineBalMap.get(env.id) ?? 0) !== 0) {
+            balance = engineBalMap.get(env.id)!;
+          } else {
+            balance = balMap.get(env.id) ?? 0;
+          }
+
+          return {
+            id: env.id,
+            name: env.name,
+            balance,
+            target_cap: env.target_cap,
+            alloc_priority: env.alloc_priority,
+            is_pool: env.is_pool,
+            active: env.active,
+          };
+        });
       } catch (err) {
         console.warn('Backend getEnvelopeBalances failed, falling back to engine:', err);
       }
@@ -880,12 +909,13 @@ export const api = {
   async getEntriesCurrent(): Promise<LedgerEntryView[]> {
     if (this.isBackendMode() && authStorage.getToken()) {
       try {
-        const [entries, members, ccs, envelopes, rawLines] = await Promise.all([
+        const [entries, members, ccs, envelopes, rawLines, unverified] = await Promise.all([
           backendApi.getEntries(),
           this.getMembers(),
           this.getCostCenters(),
           this.getEnvelopes(),
           backendApi.getLedgerLines().catch(() => []),
+          backendApi.getUnverifiedEntries().catch(() => []),
         ]);
         const memberMap = new Map(members.map((m) => [m.id, m.name]));
         const ccMap = new Map(ccs.map((c) => [c.id, c.name]));
@@ -898,10 +928,28 @@ export const api = {
           linesMap.set(l.transaction_id, list);
         }
 
+        const engineEntries = getEngine().getEntriesCurrent();
+        const engineLinesMap = new Map(engineEntries.map((tx) => [tx.id, tx.lines]));
+        const unverifiedMap = new Map(unverified.map((u) => [u.id, u]));
+
         return entries.map((e) => {
-          const lines = linesMap.get(e.id) || [
-            { id: e.id, transaction_id: e.id, envelope_id: pool?.id || 1, amount: 0 },
-          ];
+          let lines = linesMap.get(e.id);
+          if (!lines || lines.length === 0 || lines.every((l) => l.amount === 0)) {
+            const engLines = engineLinesMap.get(e.id);
+            if (engLines && engLines.length > 0 && engLines.some((l) => l.amount !== 0)) {
+              lines = engLines;
+            } else {
+              const u = unverifiedMap.get(e.id);
+              if (u) {
+                const amt = u.net_effect !== 0 ? u.net_effect : u.size;
+                const signedAmt = e.kind === 'expense' ? -Math.abs(amt) : Math.abs(amt);
+                lines = [{ id: e.id, transaction_id: e.id, envelope_id: pool?.id || 1, amount: signedAmt }];
+              } else {
+                lines = [{ id: e.id, transaction_id: e.id, envelope_id: pool?.id || 1, amount: 0 }];
+              }
+            }
+          }
+
           return {
             id: e.id,
             tenure_id: e.tenure_id,
