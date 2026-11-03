@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { FinanceEngine } from '../src/lib/db/engine';
 import { getTestSeedData } from '../src/lib/db/seed';
+import { formatCompactTaka, toLocalDateStr } from '../src/lib/utils';
 
 describe('MVP Ledger Guards & UI Preflight Checks', () => {
   it('detects overdraw preflight condition before recording transaction', () => {
@@ -135,5 +136,24 @@ describe('MVP Ledger Guards & UI Preflight Checks', () => {
 
     const updatedPool = engine.getEnvelopeBalances().find((b) => b.id === pool.id)!;
     assert.strictEqual(updatedPool.balance, initialPoolBal - 350);
+  });
+
+  it('formats compact Taka without rounding small amounts to ৳0k', () => {
+    assert.strictEqual(formatCompactTaka(0), '৳0');
+    assert.strictEqual(formatCompactTaka(null), '৳0');
+    assert.strictEqual(formatCompactTaka(undefined), '৳0');
+    assert.strictEqual(formatCompactTaka(200), '৳200');
+    assert.strictEqual(formatCompactTaka(850), '৳850');
+    assert.strictEqual(formatCompactTaka(1000), '৳1k');
+    assert.strictEqual(formatCompactTaka(1500), '৳1.5k');
+    assert.strictEqual(formatCompactTaka(12500), '৳13k');
+    assert.strictEqual(formatCompactTaka(1500000), '৳1.5M');
+    assert.strictEqual(formatCompactTaka(-500), '-৳500');
+  });
+
+  it('correctly produces local YYYY-MM-DD date string without timezone shifts', () => {
+    const d = new Date(2026, 10, 3, 23, 59, 59); // Nov 3, 2026
+    const str = toLocalDateStr(d);
+    assert.strictEqual(str, '2026-11-03');
   });
 });

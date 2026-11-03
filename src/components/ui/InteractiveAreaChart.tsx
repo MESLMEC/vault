@@ -167,12 +167,21 @@ export function InteractiveAreaChart({
   const keys = Object.keys(model);
 
   const [range, setRange] = useState(keys.includes(defaultRange) ? defaultRange : (keys[0] ?? '30D'));
+  const activeRange = keys.includes(range) ? range : (keys.includes(defaultRange) ? defaultRange : (keys[0] ?? '30D'));
   const [hover, setHover] = useState<number | null>(null);
   const [width, setWidth] = useState(0);
 
   const wrapRef = useRef<HTMLDivElement>(null);
-  const fromRef = useRef<Float64Array>(model[range]?.ny ?? new Float64Array(N));
-  const toRef = useRef<Float64Array>(model[range]?.ny ?? new Float64Array(N));
+  const fromRef = useRef<Float64Array>(model[activeRange]?.ny ?? new Float64Array(N));
+  const toRef = useRef<Float64Array>(model[activeRange]?.ny ?? new Float64Array(N));
+
+  useEffect(() => {
+    if (model[activeRange]?.ny) {
+      toRef.current = model[activeRange].ny;
+      fromRef.current = model[activeRange].ny;
+      ver.set(ver.get() + 1);
+    }
+  }, [model, activeRange]);
   const morphCtl = useRef<{ stop: () => void } | null>(null);
   const started = useRef(false);
   const lastHover = useRef(0);
@@ -225,8 +234,15 @@ export function InteractiveAreaChart({
 
   // Currency formatters
   const fmtFull = (n: number) => `${currencySymbol}${Math.round(n).toLocaleString()}`;
-  const fmtCompact = (n: number) =>
-    Math.abs(n) >= 1000 ? `${currencySymbol}${(n / 1000).toFixed(1)}k` : `${currencySymbol}${Math.round(n)}`;
+  const fmtCompact = (n: number) => {
+    if (n === 0) return `${currencySymbol}0`;
+    const abs = Math.abs(n);
+    const sign = n < 0 ? '-' : '';
+    if (abs >= 1_000_000) return `${sign}${currencySymbol}${(abs / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+    if (abs >= 10_000) return `${sign}${currencySymbol}${Math.round(abs / 1000)}k`;
+    if (abs >= 1_000) return `${sign}${currencySymbol}${(abs / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+    return `${sign}${currencySymbol}${Math.round(abs)}`;
+  };
 
   // Track width + start the intro draw once we know it
   useEffect(() => {
