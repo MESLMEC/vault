@@ -13,6 +13,25 @@ export function formatTaka(amount: number | null | undefined): string {
   return isNegative ? `-৳${formatted}` : `৳${formatted}`;
 }
 
+/** Compact Taka currency formatter (e.g. ৳250, ৳1.5k, ৳25k, ৳1.2M) without rounding small amounts to ৳0k */
+export function formatCompactTaka(amount: number | null | undefined): string {
+  if (amount === null || amount === undefined || isNaN(amount) || amount === 0) return '৳0';
+  const isNegative = amount < 0;
+  const abs = Math.abs(amount);
+  const sign = isNegative ? '-' : '';
+
+  if (abs >= 1_000_000) {
+    return `${sign}৳${(abs / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  }
+  if (abs >= 10_000) {
+    return `${sign}৳${Math.round(abs / 1_000)}k`;
+  }
+  if (abs >= 1_000) {
+    return `${sign}৳${(abs / 1_000).toFixed(1).replace(/\.0$/, '')}k`;
+  }
+  return `${sign}৳${Math.round(abs)}`;
+}
+
 /** Format standard date YYYY-MM-DD to human friendly string */
 export function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '—';

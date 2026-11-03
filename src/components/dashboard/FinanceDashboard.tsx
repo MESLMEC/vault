@@ -14,6 +14,7 @@ import {
   PieChart as PieChartIcon,
   BarChart3,
   Activity,
+  Plus,
   PlusCircle,
   Clock,
   Sparkles,
@@ -67,7 +68,7 @@ import {
   ReconciliationStatus,
   AllocationContext,
 } from '@/lib/db/types';
-import { formatTaka, formatDate } from '@/lib/utils';
+import { formatTaka, formatDate, formatCompactTaka, toLocalDateStr } from '@/lib/utils';
 
 interface FinanceDashboardProps {
   envelopes: EnvelopeBalance[];
@@ -98,6 +99,7 @@ const SOURCE_COLORS: Record<string, string> = {
   sponsorship: '#f59e0b',
   registration: '#8b5cf6',
   donation: '#06b6d4',
+  opening_balance: '#6366f1',
   other: '#64748b',
 };
 
@@ -107,6 +109,7 @@ const SOURCE_LABELS: Record<string, string> = {
   sponsorship: 'Sponsorships & Partners',
   registration: 'Event Registrations',
   donation: 'Donations & Gifts',
+  opening_balance: 'Opening Balance',
   other: 'Other Receipts',
 };
 
@@ -265,8 +268,8 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
       for (let i = 0; i < numDays; i++) {
         const d = new Date(today);
         d.setDate(d.getDate() - i);
-        const dateStr = d.toISOString().split('T')[0];
-        const utcMs = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+        const dateStr = toLocalDateStr(d);
+        const utcMs = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
 
         points.unshift({ date: utcMs, value: Math.max(0, currentVal) });
 
@@ -289,20 +292,49 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
   }, [entries, envelopes]);
 
   // --- 3. ENVELOPE DISTRIBUTION DATA ---
+  const activeEnvelopes = useMemo(() => {
+    return envelopes.filter((e) => e.active);
+  }, [envelopes]);
+
+  const envelopeColorMap = useMemo(() => {
+    const map = new Map<number, string>();
+    activeEnvelopes.forEach((env, idx) => {
+      map.set(env.id, env.is_pool ? '#3b82f6' : ENVELOPE_COLORS[(idx + 1) % ENVELOPE_COLORS.length]);
+    });
+    return map;
+  }, [activeEnvelopes]);
+
   const envelopeChartData = useMemo(() => {
-    const total = envelopes.reduce((acc, env) => acc + (env.active ? Math.max(0, env.balance) : 0), 0);
-    return envelopes
-      .filter((e) => e.active && e.balance > 0)
-      .map((env, idx) => ({
+    const total = activeEnvelopes.reduce((acc, env) => acc + Math.max(0, env.balance), 0);
+    const slices = activeEnvelopes
+      .filter((e) => e.balance > 0)
+      .map((env) => ({
         id: env.id,
         name: env.name,
         value: env.balance,
         isPool: env.is_pool,
         targetCap: env.target_cap,
         percent: total > 0 ? Math.round((env.balance / total) * 100) : 0,
-        fill: ENVELOPE_COLORS[idx % ENVELOPE_COLORS.length],
+        fill: envelopeColorMap.get(env.id) || '#64748b',
+        isEmptyPlaceholder: false,
       }));
-  }, [envelopes]);
+
+    if (slices.length === 0) {
+      return [
+        {
+          id: -1,
+          name: 'Empty Treasury',
+          value: 1,
+          isPool: false,
+          targetCap: null,
+          percent: 0,
+          fill: '#3f3f46',
+          isEmptyPlaceholder: true,
+        },
+      ];
+    }
+    return slices;
+  }, [activeEnvelopes, envelopeColorMap]);
 
   // --- 4. REVENUE / INCOME SOURCES BREAKDOWN ---
   const incomeSourcesData = useMemo(() => {
@@ -312,13 +344,14 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
       sponsorship: 0,
       registration: 0,
       donation: 0,
+      opening_balance: 0,
       other: 0,
     };
 
     entries.forEach((tx) => {
       if (!tx.is_voided && (tx.kind === 'deposit' || tx.kind === 'opening')) {
-        const src = tx.source || (tx.kind === 'opening' ? 'other' : 'other');
-        const inAmt = tx.lines.reduce((s, l) => (l.amount > 0 ? s + l.amount : s), 0);
+        const src = tx.kind === 'opening' ? 'opening_balance' : (tx.source || 'other');
+        const inAmt = (tx.lines || []).reduce((s, l) => (l.amount > 0 ? s + l.amount : s), 0);
         sourceMap[src] = (sourceMap[src] || 0) + inAmt;
       }
     });
@@ -327,7 +360,7 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
       .filter(([_, val]) => val > 0)
       .map(([key, value]) => ({
         sourceKey: key,
-        name: SOURCE_LABELS[key] || key,
+        name: SOURCE_LABELS[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
         amount: value,
         fill: SOURCE_COLORS[key] || '#64748b',
       }))
@@ -409,29 +442,11 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
         <div className="flex items-center gap-2">
           <Button
             size="sm"
-            variant="outline"
             onClick={() => onQuickRecord('deposit')}
-            className="text-xs gap-1.5"
+            className="text-xs gap-1.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 shadow-sm"
           >
-            <ArrowDownRight className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>Money In</span>
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onQuickRecord('expense')}
-            className="text-xs gap-1.5"
-          >
-            <ArrowUpRight className="h-3.5 w-3.5 text-red-500" />
-            <span>Money Out</span>
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => onQuickRecord('fee')}
-            className="text-xs gap-1.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900"
-          >
-            <Users className="h-3.5 w-3.5" />
-            <span>Collect Fees</span>
+            <Plus className="h-3.5 w-3.5" />
+            <span>Record Transaction</span>
           </Button>
         </div>
       </div>
@@ -661,9 +676,17 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
               currencySymbol="৳"
               chartColor="text-emerald-500 dark:text-emerald-400"
             />
+          ) : timelineData.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-[280px] text-muted-foreground text-center">
+              <Activity className="h-8 w-8 text-muted-foreground/40 mb-2" />
+              <p className="text-sm font-medium text-foreground">No cash flow activity recorded</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Transactions recorded will populate monthly inflows and outflows.
+              </p>
+            </div>
           ) : (
-            <ChartContainer config={cashFlowChartConfig} className="h-[280px] w-full pt-4">
-              <BarChart data={timelineData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+            <ChartContainer config={cashFlowChartConfig} className="aspect-auto h-[280px] w-full pt-4">
+              <BarChart data={timelineData} margin={{ top: 10, right: 15, left: 15, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                 <XAxis
                   dataKey="label"
@@ -672,10 +695,12 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
                   tickMargin={8}
                 />
                 <YAxis
+                  width={55}
                   tickLine={false}
                   axisLine={false}
-                  tickFormatter={(val) => `৳${(val / 1000).toFixed(0)}k`}
+                  tickFormatter={formatCompactTaka}
                 />
+                <ChartLegend content={<ChartLegendContent className="justify-end -mt-2 mb-2 text-xs" />} />
                 <ChartTooltip
                   content={
                     <ChartTooltipContent
@@ -758,8 +783,8 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
 
           <CardContent className="flex-1 flex flex-col justify-between pt-2">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
-              {/* Donut Chart */}
-              <div className="h-[200px] w-full flex items-center justify-center">
+              {/* Donut Chart with Center Metric */}
+              <div className="relative h-[200px] w-full flex items-center justify-center">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
@@ -770,77 +795,95 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
                       cy="50%"
                       innerRadius={55}
                       outerRadius={85}
-                      paddingAngle={2}
+                      paddingAngle={envelopeChartData.some((e) => (e as any).isEmptyPlaceholder) ? 0 : 2}
                     >
                       {envelopeChartData.map((entry) => (
                         <Cell key={`cell-${entry.id}`} fill={entry.fill} />
                       ))}
                     </Pie>
-                    <Tooltip
-                      formatter={(val: any) => [formatTaka(Number(val)), 'Balance']}
-                      contentStyle={{
-                        backgroundColor: 'rgba(24, 24, 27, 0.95)',
-                        border: '1px solid rgba(63, 63, 70, 0.4)',
-                        borderRadius: '8px',
-                        color: '#fff',
-                        fontSize: '12px',
-                      }}
-                    />
+                    {!envelopeChartData.some((e) => (e as any).isEmptyPlaceholder) && (
+                      <Tooltip
+                        formatter={(val: any) => [formatTaka(Number(val)), 'Balance']}
+                        contentStyle={{
+                          backgroundColor: 'rgba(24, 24, 27, 0.95)',
+                          border: '1px solid rgba(63, 63, 70, 0.4)',
+                          borderRadius: '8px',
+                          color: '#fff',
+                          fontSize: '12px',
+                        }}
+                      />
+                    )}
                   </PieChart>
                 </ResponsiveContainer>
+                {/* Donut Center Metric */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center select-none">
+                  <span className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground">
+                    Total Funds
+                  </span>
+                  <span className="text-sm sm:text-base font-bold font-mono text-foreground">
+                    {formatCompactTaka(kpis.totalLiquid)}
+                  </span>
+                </div>
               </div>
 
               {/* Envelope Utilization Details */}
-              <div className="space-y-3 pr-2">
-                {envelopeChartData.map((env) => {
-                  const cap = env.targetCap;
-                  const capPct = cap ? Math.min(100, Math.round((env.value / cap) * 100)) : null;
+              <div className="max-h-[220px] overflow-y-auto pr-2 space-y-3">
+                {activeEnvelopes.length === 0 ? (
+                  <div className="text-center py-8 text-xs text-muted-foreground">
+                    No active envelopes found.
+                  </div>
+                ) : (
+                  activeEnvelopes.map((env) => {
+                    const cap = env.target_cap;
+                    const capPct = cap ? Math.min(100, Math.round((Math.max(0, env.balance) / cap) * 100)) : null;
+                    const envFill = envelopeColorMap.get(env.id) || '#64748b';
 
-                  return (
-                    <div key={env.id} className="space-y-1">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="flex items-center gap-1.5 truncate font-medium text-zinc-800 dark:text-zinc-200">
-                          <span
-                            className="h-2 w-2 rounded-full shrink-0"
-                            style={{ backgroundColor: env.fill }}
-                          />
-                          <span className="truncate">{env.name}</span>
-                          {env.isPool && (
-                            <span className="text-[10px] text-blue-500 font-semibold">(Pool)</span>
-                          )}
-                        </span>
-                        <span className="font-mono font-medium text-zinc-900 dark:text-zinc-100 shrink-0">
-                          {formatTaka(env.value)}
-                        </span>
-                      </div>
+                    return (
+                      <div key={env.id} className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="flex items-center gap-1.5 truncate font-medium text-zinc-800 dark:text-zinc-200">
+                            <span
+                              className="h-2 w-2 rounded-full shrink-0"
+                              style={{ backgroundColor: envFill }}
+                            />
+                            <span className="truncate">{env.name}</span>
+                            {env.is_pool && (
+                              <span className="text-[10px] text-blue-500 font-semibold">(Pool)</span>
+                            )}
+                          </span>
+                          <span className="font-mono font-medium text-zinc-900 dark:text-zinc-100 shrink-0">
+                            {formatTaka(env.balance)}
+                          </span>
+                        </div>
 
-                      {cap !== null && capPct !== null ? (
-                        <div className="space-y-0.5">
-                          <Progress
-                            value={capPct}
-                            className="h-1.5"
-                            indicatorClassName={capPct >= 100 ? 'bg-emerald-500' : 'bg-blue-500'}
-                          />
-                          <div className="flex justify-between text-[10px] text-muted-foreground">
-                            <span>Cap: {formatTaka(cap)}</span>
-                            <span>{capPct}% filled</span>
+                        {cap !== null && capPct !== null ? (
+                          <div className="space-y-0.5">
+                            <Progress
+                              value={capPct}
+                              className="h-1.5"
+                              indicatorClassName={capPct >= 100 ? 'bg-emerald-500' : 'bg-blue-500'}
+                            />
+                            <div className="flex justify-between text-[10px] text-muted-foreground">
+                              <span>Cap: {formatTaka(cap)}</span>
+                              <span>{capPct}% filled</span>
+                            </div>
                           </div>
-                        </div>
-                      ) : (
-                        <div className="text-[10px] text-muted-foreground">
-                          {env.isPool ? 'Flexible Buffer' : 'No Cap Limit'}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                        ) : (
+                          <div className="text-[10px] text-muted-foreground">
+                            {env.is_pool ? 'Flexible Buffer' : 'No Cap Limit'}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
           </CardContent>
 
           <CardFooter className="border-t border-border/40 py-2.5 px-6 text-xs text-muted-foreground bg-muted/10 flex justify-between">
             <span>
-              Total Envelopes: <strong className="text-foreground">{envelopeChartData.length} active</strong>
+              Total Envelopes: <strong className="text-foreground">{activeEnvelopes.length} active</strong>
             </span>
             <button
               onClick={() => onNavigate('allocation')}
@@ -864,46 +907,56 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
           </CardHeader>
 
           <CardContent className="flex-1 pt-2">
-            <div className="h-[220px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={incomeSourcesData}
-                  layout="vertical"
-                  margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                  <XAxis
-                    type="number"
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(val) => `৳${(val / 1000).toFixed(0)}k`}
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="name"
-                    tickLine={false}
-                    axisLine={false}
-                    width={110}
-                    tick={{ fontSize: 11 }}
-                  />
-                  <Tooltip
-                    formatter={(val: any) => [formatTaka(Number(val)), 'Total Inflow']}
-                    contentStyle={{
-                      backgroundColor: 'rgba(24, 24, 27, 0.95)',
-                      border: '1px solid rgba(63, 63, 70, 0.4)',
-                      borderRadius: '8px',
-                      color: '#fff',
-                      fontSize: '12px',
-                    }}
-                  />
-                  <Bar dataKey="amount" radius={[0, 4, 4, 0]} maxBarSize={22}>
-                    {incomeSourcesData.map((entry) => (
-                      <Cell key={`source-${entry.sourceKey}`} fill={entry.fill} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            {incomeSourcesData.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-[220px] text-muted-foreground text-center">
+                <BarChart3 className="h-8 w-8 text-muted-foreground/40 mb-2" />
+                <p className="text-sm font-medium text-foreground">No income data recorded</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Record a deposit or grant to view income streams.
+                </p>
+              </div>
+            ) : (
+              <div className="h-[220px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={incomeSourcesData}
+                    layout="vertical"
+                    margin={{ top: 5, right: 30, left: 10, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                    <XAxis
+                      type="number"
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={formatCompactTaka}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="name"
+                      tickLine={false}
+                      axisLine={false}
+                      width={135}
+                      tick={{ fontSize: 11 }}
+                    />
+                    <Tooltip
+                      formatter={(val: any) => [formatTaka(Number(val)), 'Total Inflow']}
+                      contentStyle={{
+                        backgroundColor: 'rgba(24, 24, 27, 0.95)',
+                        border: '1px solid rgba(63, 63, 70, 0.4)',
+                        borderRadius: '8px',
+                        color: '#fff',
+                        fontSize: '12px',
+                      }}
+                    />
+                    <Bar dataKey="amount" radius={[0, 4, 4, 0]} maxBarSize={22}>
+                      {incomeSourcesData.map((entry) => (
+                        <Cell key={`source-${entry.sourceKey}`} fill={entry.fill} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </CardContent>
 
           <CardFooter className="border-t border-border/40 py-2.5 px-6 text-xs text-muted-foreground bg-muted/10 flex justify-between">
@@ -948,36 +1001,47 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
           </CardHeader>
 
           <CardContent className="flex-1 pt-2">
-            <ChartContainer config={costCenterChartConfig} className="h-[220px] w-full">
-              <BarChart data={costCenterChartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="name" tickLine={false} axisLine={false} />
-                <YAxis
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(val) => `৳${val}`}
-                />
-                <ChartTooltip
-                  content={
-                    <ChartTooltipContent
-                      formatter={(val, name) => (
-                        <div className="flex items-center justify-between gap-4 w-full">
-                          <span className="text-muted-foreground">
-                            {name === 'allocated' ? 'Budget In' : name === 'spent' ? 'Spent' : 'Leftover'}:
-                          </span>
-                          <span className="font-mono font-semibold tabular-nums text-foreground">
-                            {formatTaka(Number(val))}
-                          </span>
-                        </div>
-                      )}
-                    />
-                  }
-                />
-                <Bar dataKey="allocated" name="allocated" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="spent" name="spent" fill="#f43f5e" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="leftover" name="leftover" fill="#10b981" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ChartContainer>
+            {costCenterChartData.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-[220px] text-muted-foreground text-center">
+                <Calendar className="h-8 w-8 text-muted-foreground/40 mb-2" />
+                <p className="text-sm font-medium text-foreground">No project cost centers yet</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Create cost centers for events or projects to track allocations.
+                </p>
+              </div>
+            ) : (
+              <ChartContainer config={costCenterChartConfig} className="aspect-auto h-[220px] w-full">
+                <BarChart data={costCenterChartData} margin={{ top: 10, right: 15, left: 15, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" tickLine={false} axisLine={false} />
+                  <YAxis
+                    width={55}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={formatCompactTaka}
+                  />
+                  <ChartTooltip
+                    content={
+                      <ChartTooltipContent
+                        formatter={(val, name) => (
+                          <div className="flex items-center justify-between gap-4 w-full">
+                            <span className="text-muted-foreground">
+                              {name === 'allocated' ? 'Budget In' : name === 'spent' ? 'Spent' : 'Leftover'}:
+                            </span>
+                            <span className="font-mono font-semibold tabular-nums text-foreground">
+                              {formatTaka(Number(val))}
+                            </span>
+                          </div>
+                        )}
+                      />
+                    }
+                  />
+                  <Bar dataKey="allocated" name="allocated" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="spent" name="spent" fill="#f43f5e" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="leftover" name="leftover" fill="#10b981" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ChartContainer>
+            )}
           </CardContent>
 
           <CardFooter className="border-t border-border/40 py-2.5 px-6 text-xs text-muted-foreground bg-muted/10 flex justify-between items-center">

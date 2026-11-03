@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { FinanceEngine } from '../src/lib/db/engine';
 import { getTestSeedData } from '../src/lib/db/seed';
+import { formatCompactTaka, toLocalDateStr } from '../src/lib/utils';
 
 describe('MVP Ledger Guards & UI Preflight Checks', () => {
   it('detects overdraw preflight condition before recording transaction', () => {
@@ -83,5 +84,76 @@ describe('MVP Ledger Guards & UI Preflight Checks', () => {
     assert.strictEqual(allTransactions.some((e) => e.id === tx.id), true);
     assert.strictEqual(allTransactions.some((e) => e.id === reversal.id), true);
     assert.strictEqual(allTransactions.some((e) => e.id === replacement.id), true);
+  });
+
+  it('records deposit targeting envelope by name/id and credits that envelope', () => {
+    const engine = new FinanceEngine(getTestSeedData());
+    const balancesBefore = engine.getEnvelopeBalances();
+    const targetEnv = balancesBefore.find((b) => b.name === 'Components & Stash');
+    assert(targetEnv, 'Components & Stash envelope should exist');
+    const initialBal = targetEnv.balance;
+
+    const depositTx = engine.recordTransaction({
+      kind: 'deposit',
+      occurred_on: '2026-10-20',
+      recorded_by: 'Treasurer',
+      source: 'admin_grant',
+      note: 'Lab grant for components',
+      lines: [{ envelope_id: targetEnv.id, amount: 2500 }],
+    });
+
+    assert.strictEqual(depositTx.kind, 'deposit');
+    const entry = engine.getEntriesCurrent().find((e) => e.id === depositTx.id);
+    assert(entry);
+    assert.strictEqual(entry.lines[0].envelope_id, targetEnv.id);
+    assert.strictEqual(entry.lines[0].amount, 2500);
+
+    const balancesAfter = engine.getEnvelopeBalances();
+    const updatedEnv = balancesAfter.find((b) => b.id === targetEnv.id)!;
+    assert.strictEqual(updatedEnv.balance, initialBal + 2500);
+  });
+
+  it('deducts from unallocated pool by default when recording expense with no other envelopes', () => {
+    const data = getTestSeedData();
+    data.envelopes = data.envelopes.filter((e) => e.is_pool);
+    const engine = new FinanceEngine(data);
+    const pool = engine.getPoolEnvelope();
+    const initialPoolBal = engine.getEnvelopeBalances().find((b) => b.id === pool.id)!.balance;
+
+    const expenseTx = engine.recordTransaction({
+      kind: 'expense',
+      occurred_on: '2026-10-20',
+      recorded_by: 'Treasurer',
+      note: 'Lab tea and stationery',
+      lines: [{ envelope_id: pool.id, amount: -350 }],
+    });
+
+    assert.strictEqual(expenseTx.kind, 'expense');
+    const entry = engine.getEntriesCurrent().find((e) => e.id === expenseTx.id);
+    assert(entry);
+    assert.strictEqual(entry.lines[0].envelope_id, pool.id);
+    assert.strictEqual(entry.lines[0].amount, -350);
+
+    const updatedPool = engine.getEnvelopeBalances().find((b) => b.id === pool.id)!;
+    assert.strictEqual(updatedPool.balance, initialPoolBal - 350);
+  });
+
+  it('formats compact Taka without rounding small amounts to ৳0k', () => {
+    assert.strictEqual(formatCompactTaka(0), '৳0');
+    assert.strictEqual(formatCompactTaka(null), '৳0');
+    assert.strictEqual(formatCompactTaka(undefined), '৳0');
+    assert.strictEqual(formatCompactTaka(200), '৳200');
+    assert.strictEqual(formatCompactTaka(850), '৳850');
+    assert.strictEqual(formatCompactTaka(1000), '৳1k');
+    assert.strictEqual(formatCompactTaka(1500), '৳1.5k');
+    assert.strictEqual(formatCompactTaka(12500), '৳13k');
+    assert.strictEqual(formatCompactTaka(1500000), '৳1.5M');
+    assert.strictEqual(formatCompactTaka(-500), '-৳500');
+  });
+
+  it('correctly produces local YYYY-MM-DD date string without timezone shifts', () => {
+    const d = new Date(2026, 10, 3, 23, 59, 59); // Nov 3, 2026
+    const str = toLocalDateStr(d);
+    assert.strictEqual(str, '2026-11-03');
   });
 });
