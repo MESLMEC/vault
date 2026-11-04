@@ -374,7 +374,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     // Soft duplicate detection
     const match = recentEntries.find((tx) => {
       if (tx.occurred_on !== date) return false;
-      const txAmt = Math.abs(tx.lines[0]?.amount || 0);
+      const txAmt = Math.abs(tx.lines[0]?.amount || tx.size || 0);
       if (memId && tx.member_id === memId && txAmt === amt) return true;
       if (kind === 'expense' && tx.kind === 'expense' && txAmt === amt && tx.lines.some((l) => l.envelope_id === fromEnvId)) {
         return true;

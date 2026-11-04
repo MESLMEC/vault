@@ -10,6 +10,7 @@ import {
   ShutdownEvent,
   MemberAdjustment,
   LedgerTransaction,
+  LedgerLine,
   EnvelopeBalance,
   LedgerEntryView,
   MemberStanding,
@@ -289,21 +290,32 @@ export const api = {
   async getEnvelopeBalances(): Promise<EnvelopeBalance[]> {
     if (this.isBackendMode() && authStorage.getToken()) {
       try {
-        const [envelopes, context, rawLines] = await Promise.all([
+        const [envelopes, context, entries, rawLines] = await Promise.all([
           backendApi.getEnvelopes(),
           backendApi.getAllocationContext().catch(() => null),
+          backendApi.getEntries().catch(() => []),
           backendApi.getLedgerLines().catch(() => []),
         ]);
 
         const lineSumMap = new Map<number, number>();
-        for (const l of rawLines) {
-          lineSumMap.set(l.envelope_id, (lineSumMap.get(l.envelope_id) || 0) + l.amount);
+        for (const entry of entries) {
+          if (entry.lines) {
+            for (const l of entry.lines) {
+              lineSumMap.set(l.envelope_id, (lineSumMap.get(l.envelope_id) || 0) + l.amount);
+            }
+          }
+        }
+        // Fall back to rawLines if entries had no lines
+        if (lineSumMap.size === 0) {
+          for (const l of rawLines) {
+            lineSumMap.set(l.envelope_id, (lineSumMap.get(l.envelope_id) || 0) + l.amount);
+          }
         }
 
         const engineBalMap = new Map(getEngine().getEnvelopeBalances().map((b) => [b.id, b.balance]));
 
         let suggestions: Array<{ envelope_id: number; balance: number }> = [];
-        if (rawLines.length === 0) {
+        if (lineSumMap.size === 0) {
           try {
             suggestions = await backendApi.getAllocationSuggestion({ amount: 1 });
           } catch {
@@ -319,7 +331,7 @@ export const api = {
           let balance = 0;
           if (env.balance !== undefined && env.balance !== null) {
             balance = env.balance;
-          } else if (rawLines.length > 0) {
+          } else if (lineSumMap.has(env.id)) {
             balance = env.is_pool
               ? (context?.pool_balance ?? (lineSumMap.get(env.id) || 0))
               : (lineSumMap.get(env.id) || 0);
@@ -933,22 +945,44 @@ export const api = {
         const unverifiedMap = new Map(unverified.map((u) => [u.id, u]));
 
         return entries.map((e) => {
-          let lines = linesMap.get(e.id);
-          if (!lines || lines.length === 0 || lines.every((l) => l.amount === 0)) {
-            const engLines = engineLinesMap.get(e.id);
-            if (engLines && engLines.length > 0 && engLines.some((l) => l.amount !== 0)) {
-              lines = engLines;
-            } else {
-              const u = unverifiedMap.get(e.id);
-              if (u) {
-                const amt = u.net_effect !== 0 ? u.net_effect : u.size;
-                const signedAmt = e.kind === 'expense' ? -Math.abs(amt) : Math.abs(amt);
-                lines = [{ id: e.id, transaction_id: e.id, envelope_id: pool?.id || 1, amount: signedAmt }];
+          let lines: LedgerLine[] = [];
+          if (Array.isArray(e.lines) && e.lines.length > 0) {
+            lines = e.lines.map((l, idx) => ({
+              id: e.id * 1000 + idx + 1,
+              transaction_id: e.id,
+              envelope_id: l.envelope_id,
+              amount: l.amount,
+            }));
+          } else {
+            let fallbackLines = linesMap.get(e.id);
+            if (!fallbackLines || fallbackLines.length === 0 || fallbackLines.every((l) => l.amount === 0)) {
+              const engLines = engineLinesMap.get(e.id);
+              if (engLines && engLines.length > 0 && engLines.some((l) => l.amount !== 0)) {
+                fallbackLines = engLines;
               } else {
-                lines = [{ id: e.id, transaction_id: e.id, envelope_id: pool?.id || 1, amount: 0 }];
+                const u = unverifiedMap.get(e.id);
+                if (u) {
+                  const amt = u.net_effect !== 0 ? u.net_effect : u.size;
+                  const signedAmt = e.kind === 'expense' ? -Math.abs(amt) : Math.abs(amt);
+                  fallbackLines = [{ id: e.id * 1000 + 1, transaction_id: e.id, envelope_id: pool?.id || 1, amount: signedAmt }];
+                } else {
+                  fallbackLines = [{ id: e.id * 1000 + 1, transaction_id: e.id, envelope_id: pool?.id || 1, amount: 0 }];
+                }
               }
             }
+            lines = fallbackLines;
           }
+
+          const netEffect = e.net_effect !== undefined
+            ? e.net_effect
+            : lines.reduce((s, l) => s + l.amount, 0);
+
+          const size = e.size !== undefined
+            ? e.size
+            : Math.max(
+                lines.filter((l) => l.amount > 0).reduce((s, l) => s + l.amount, 0),
+                -lines.filter((l) => l.amount < 0).reduce((s, l) => s + l.amount, 0)
+              );
 
           return {
             id: e.id,
@@ -965,6 +999,8 @@ export const api = {
             reverses_id: null,
             replaces_id: e.corrected_from,
             lines,
+            net_effect: netEffect,
+            size,
             is_voided: false,
             corrected_from: e.corrected_from,
             cost_center_name: e.cost_center_id ? ccMap.get(e.cost_center_id) : undefined,

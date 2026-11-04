@@ -24,8 +24,8 @@ export const FeeReceiptModal: React.FC<FeeReceiptModalProps> = ({
 
   if (!isOpen || !transaction) return null;
 
-  const rawAmount = transaction.lines.reduce((s, l) => s + l.amount, 0);
-  const amount = Math.abs(rawAmount);
+  const rawAmount = (transaction.lines || []).reduce((s, l) => s + l.amount, 0);
+  const amount = Math.abs(rawAmount || transaction.size || transaction.net_effect || 0);
   const memberName = transaction.member_name || member?.name || standing?.who_name || 'Lab Member';
   const memberBatch = member?.batch ? ` (Batch ${member.batch})` : '';
   const whoPaid = `${memberName}${memberBatch}`;

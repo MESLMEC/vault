@@ -321,4 +321,85 @@ describe('Backend API Client Contract Tests', () => {
     assert.strictEqual('cost_center_id' in body, false);
     assert.strictEqual('recorded_by' in body, false);
   });
+
+  it('GET /api/v1/entries receives entry lines, net_effect, and size (issue #5)', async () => {
+    mockResponse = {
+      status: 200,
+      ok: true,
+      body: [
+        {
+          id: 42,
+          tenure_id: 1,
+          kind: 'deposit',
+          occurred_on: '2026-02-01',
+          recorded_at: '2026-02-01T10:00:00Z',
+          recorded_by: 'treasurer',
+          note: 'Sponsorship intake',
+          tag: 'fest',
+          cost_center_id: null,
+          member_id: null,
+          source: 'sponsorship',
+          corrected_from: null,
+          lines: [
+            { envelope_id: 1, amount: 5000 },
+          ],
+          net_effect: 5000,
+          size: 5000,
+        },
+        {
+          id: 43,
+          tenure_id: 1,
+          kind: 'transfer',
+          occurred_on: '2026-02-02',
+          recorded_at: '2026-02-02T11:00:00Z',
+          recorded_by: 'treasurer',
+          note: 'Fund event',
+          tag: 'allocation',
+          cost_center_id: 2,
+          member_id: null,
+          source: null,
+          corrected_from: null,
+          lines: [
+            { envelope_id: 1, amount: -2000 },
+            { envelope_id: 2, amount: 2000 },
+          ],
+          net_effect: 0,
+          size: 2000,
+        },
+      ],
+    };
+
+    const entries = await backendApi.getEntries();
+    assert.strictEqual(lastFetch?.url, '/api/v1/entries');
+    assert.strictEqual(entries.length, 2);
+
+    const dep = entries[0];
+    assert.strictEqual(dep.id, 42);
+    assert.strictEqual(dep.lines.length, 1);
+    assert.strictEqual(dep.lines[0].envelope_id, 1);
+    assert.strictEqual(dep.lines[0].amount, 5000);
+    assert.strictEqual(dep.net_effect, 5000);
+    assert.strictEqual(dep.size, 5000);
+
+    const xfer = entries[1];
+    assert.strictEqual(xfer.id, 43);
+    assert.strictEqual(xfer.lines.length, 2);
+    assert.strictEqual(xfer.lines[0].amount, -2000);
+    assert.strictEqual(xfer.lines[1].amount, 2000);
+    assert.strictEqual(xfer.net_effect, 0);
+    assert.strictEqual(xfer.size, 2000);
+
+    // Verify getLedgerLines parses the entry lines with transaction ids
+    const lines = await backendApi.getLedgerLines();
+    assert.strictEqual(lines.length, 3);
+    assert.strictEqual(lines[0].transaction_id, 42);
+    assert.strictEqual(lines[0].envelope_id, 1);
+    assert.strictEqual(lines[0].amount, 5000);
+    assert.strictEqual(lines[1].transaction_id, 43);
+    assert.strictEqual(lines[1].envelope_id, 1);
+    assert.strictEqual(lines[1].amount, -2000);
+    assert.strictEqual(lines[2].transaction_id, 43);
+    assert.strictEqual(lines[2].envelope_id, 2);
+    assert.strictEqual(lines[2].amount, 2000);
+  });
 });

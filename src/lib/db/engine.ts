@@ -567,9 +567,15 @@ export class FinanceEngine {
 
     return this.state.ledger_transactions.map((tx) => {
       const lines = this.state.ledger_lines.filter((l) => l.transaction_id === tx.id);
+      const net_effect = lines.reduce((s, l) => s + l.amount, 0);
+      const posSum = lines.filter((l) => l.amount > 0).reduce((s, l) => s + l.amount, 0);
+      const negSum = lines.filter((l) => l.amount < 0).reduce((s, l) => s + l.amount, 0);
+      const size = Math.max(posSum, -negSum);
       return {
         ...tx,
         lines,
+        net_effect,
+        size,
         is_voided: reversedIds.has(tx.id),
         corrected_from: tx.replaces_id,
         cost_center_name: tx.cost_center_id ? ccMap.get(tx.cost_center_id) : undefined,

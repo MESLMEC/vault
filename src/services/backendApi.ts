@@ -184,6 +184,11 @@ export interface CreateAdjustmentRequest {
   note: string;
 }
 
+export interface EntryLineOut {
+  envelope_id: number;
+  amount: number;
+}
+
 export interface EntryOut {
   id: number;
   tenure_id: number;
@@ -197,6 +202,9 @@ export interface EntryOut {
   source: IncomeSource | null;
   member_id: number | null;
   corrected_from: number | null;
+  lines: EntryLineOut[];
+  net_effect: number;
+  size: number;
 }
 
 export interface LedgerLineOut {
@@ -923,7 +931,26 @@ export const backendApi = {
 
   async getLedgerLines(tenureId?: number): Promise<LedgerLineOut[]> {
     const qs = tenureId ? `?tenure_id=${tenureId}` : '';
-    return request<LedgerLineOut[]>(`/api/v1/ledger-lines${qs}`);
+    try {
+      const entries = await this.getEntries(tenureId);
+      const lines: LedgerLineOut[] = [];
+      let lineId = 1;
+      for (const entry of entries) {
+        if (entry.lines) {
+          for (const line of entry.lines) {
+            lines.push({
+              id: lineId++,
+              transaction_id: entry.id,
+              envelope_id: line.envelope_id,
+              amount: line.amount,
+            });
+          }
+        }
+      }
+      return lines;
+    } catch {
+      return request<LedgerLineOut[]>(`/api/v1/ledger-lines${qs}`);
+    }
   },
 
   async recordDeposit(data: DepositRequest): Promise<EntryCreated> {

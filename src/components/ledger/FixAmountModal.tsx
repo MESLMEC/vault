@@ -20,7 +20,7 @@ export const FixAmountModal: React.FC<FixAmountModalProps> = ({
 }) => {
   if (!transaction) return null;
 
-  const currentAmt = Math.abs(transaction.lines[0]?.amount ?? 0);
+  const currentAmt = Math.abs(transaction.lines[0]?.amount ?? transaction.size ?? 0);
   const [newAmount, setNewAmount] = useState(String(currentAmt));
   const [newNote, setNewNote] = useState(transaction.note);
   const [recordedBy, setRecordedBy] = useState('Treasurer');
@@ -48,10 +48,12 @@ export const FixAmountModal: React.FC<FixAmountModalProps> = ({
     setLoading(true);
     try {
       // Re-sign according to original line direction
-      const updatedLines = transaction.lines.map((l) => ({
-        envelope_id: l.envelope_id,
-        amount: l.amount < 0 ? -amt : amt,
-      }));
+      const updatedLines = (transaction.lines && transaction.lines.length > 0)
+        ? transaction.lines.map((l) => ({
+            envelope_id: l.envelope_id,
+            amount: l.amount < 0 ? -amt : amt,
+          }))
+        : [{ envelope_id: 1, amount: transaction.kind === 'expense' ? -amt : amt }];
 
       await api.fixAmount({
         transactionId: transaction.id,

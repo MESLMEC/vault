@@ -240,6 +240,8 @@ export interface LedgerEntryView extends LedgerTransaction {
   cost_center_name?: string;
   member_name?: string;
   source_label?: string;
+  net_effect?: number;
+  size?: number;
 }
 
 export interface MemberStanding {
