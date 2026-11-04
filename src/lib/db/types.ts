@@ -287,6 +287,7 @@ export interface AssetHolding {
   member_id: number;
   member_name: string;
   quantity: number;
+  borrowed_date?: string;
 }
 
 export interface ReconciliationStatus {

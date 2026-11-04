@@ -1346,12 +1346,15 @@ export const api = {
     if (this.isBackendMode() && authStorage.getToken()) {
       try {
         const holdings = await backendApi.getAssetHoldings();
+        const engineHoldings = getEngine().getAssetHoldings(asOfDate);
+        const engineDateMap = new Map(engineHoldings.map((eh) => [`${eh.asset_id}:${eh.member_id}`, eh.borrowed_date]));
         return holdings.map((h) => ({
           asset_id: h.asset_id,
           asset_name: h.asset_name,
           member_id: h.member_id,
           member_name: h.member_name,
           quantity: h.quantity,
+          borrowed_date: h.borrowed_date ?? engineDateMap.get(`${h.asset_id}:${h.member_id}`),
         }));
       } catch (err) {
         console.warn('Backend getAssetHoldings failed:', err);

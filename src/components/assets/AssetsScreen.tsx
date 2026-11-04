@@ -3,7 +3,6 @@ import {
   Wrench,
   Package,
   UserCheck,
-  AlertOctagon,
   Download,
   Plus,
   ArrowRight,
@@ -35,7 +34,7 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
   onRefresh,
   onError,
 }) => {
-  const [tab, setTab] = useState<'inventory' | 'holdings' | 'admin_queue'>('inventory');
+  const [tab, setTab] = useState<'inventory' | 'holdings'>('inventory');
   const [assets, setAssets] = useState<Asset[]>([]);
   const [assetStates, setAssetStates] = useState<AssetState[]>([]);
   const [holdings, setHoldings] = useState<AssetHolding[]>([]);
@@ -213,7 +212,7 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
       </div>
 
       {/* Tabs */}
-      <div className="flex rounded-lg bg-zinc-100 dark:bg-zinc-800 p-1 text-xs font-medium max-w-md">
+      <div className="flex rounded-lg bg-zinc-100 dark:bg-zinc-800 p-1 text-xs font-medium max-w-xs">
         <button
           onClick={() => setTab('inventory')}
           className={`flex-1 py-1.5 rounded-md flex items-center justify-center gap-1.5 transition-all ${
@@ -236,18 +235,6 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
         >
           <UserCheck className="h-3.5 w-3.5" />
           <span>Who Has What ({holdings.length})</span>
-        </button>
-
-        <button
-          onClick={() => setTab('admin_queue')}
-          className={`flex-1 py-1.5 rounded-md flex items-center justify-center gap-1.5 transition-all ${
-            tab === 'admin_queue'
-              ? 'bg-white dark:bg-zinc-900 text-red-600 dark:text-red-400 font-semibold shadow-sm'
-              : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'
-          }`}
-        >
-          <AlertOctagon className="h-3.5 w-3.5" />
-          <span>Admin Exchange ({adminQueue.length})</span>
         </button>
       </div>
 
@@ -388,6 +375,7 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
               <tr>
                 <th className="py-3 px-4">Borrowing Member</th>
                 <th className="py-3 px-4">Equipment</th>
+                <th className="py-3 px-4">Date Borrowed</th>
                 <th className="py-3 px-4 text-center">Quantity</th>
                 <th className="py-3 px-4 text-center">Action</th>
               </tr>
@@ -395,7 +383,7 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
               {holdings.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="py-8 text-center text-zinc-400">
+                  <td colSpan={5} className="py-8 text-center text-zinc-400">
                     No equipment currently on loan with members.
                   </td>
                 </tr>
@@ -409,6 +397,9 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
                       </td>
                       <td className="py-3 px-4 text-zinc-700 dark:text-zinc-300">
                         {h.asset_name}
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap text-zinc-600 dark:text-zinc-400 font-mono text-[11px]">
+                        {h.borrowed_date ? formatDate(h.borrowed_date) : '—'}
                       </td>
                       <td className="py-3 px-4 text-center font-mono font-bold text-zinc-900 dark:text-zinc-100">
                         {h.quantity}
@@ -433,75 +424,6 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
                     </tr>
                   );
                 })
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* TAB 3: Admin Replacement Queue */}
-      {tab === 'admin_queue' && (
-        <div className="overflow-hidden rounded-xl border border-red-200 dark:border-red-900/60 bg-white dark:bg-zinc-900 shadow-sm">
-          <div className="p-4 bg-red-50/50 dark:bg-red-950/20 border-b border-red-100 dark:border-red-900/40 flex items-center justify-between">
-            <div>
-              <span className="text-xs font-semibold text-red-900 dark:text-red-300 flex items-center gap-1.5">
-                <AlertOctagon className="h-4 w-4 text-red-600" />
-                Admin Replacement Queue
-              </span>
-              <p className="text-[11px] text-red-700 dark:text-red-400 mt-0.5">
-                College administration owned items that are damaged and waiting for exchange/replacement.
-              </p>
-            </div>
-            <button
-              onClick={handleExportAdminCsv}
-              className="rounded-lg bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 shadow-xs"
-            >
-              <Download className="h-3 w-3" />
-              <span>Export CSV for Admin</span>
-            </button>
-          </div>
-
-          <table className="w-full text-left text-xs">
-            <thead className="bg-zinc-50 dark:bg-zinc-800/60 text-zinc-500 uppercase tracking-wider text-[10px] font-semibold border-b border-zinc-200 dark:border-zinc-800">
-              <tr>
-                <th className="py-3 px-4">Equipment Name</th>
-                <th className="py-3 px-4">Admin Inventory Tag</th>
-                <th className="py-3 px-4 text-center">Damaged Units</th>
-                <th className="py-3 px-4 text-center">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
-              {adminQueue.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="py-8 text-center text-zinc-400">
-                    No admin items currently awaiting replacement.
-                  </td>
-                </tr>
-              ) : (
-                adminQueue.map((q) => (
-                  <tr key={q.asset_id}>
-                    <td className="py-3 px-4 font-semibold text-zinc-900 dark:text-zinc-100">
-                      {q.asset_name}
-                    </td>
-                    <td className="py-3 px-4 font-mono text-zinc-500">{q.tag || 'None'}</td>
-                    <td className="py-3 px-4 text-center font-mono font-bold text-red-600 dark:text-red-400">
-                      {q.damaged}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <button
-                        onClick={() => {
-                          setActionAsset(q);
-                          setActionKind('exchanged');
-                          setActionQuantity(String(q.damaged));
-                          setActionNote('Admin exchanged damaged unit for new unit');
-                        }}
-                        className="rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2.5 py-1 text-[11px] font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50"
-                      >
-                        Mark Exchanged by Admin
-                      </button>
-                    </td>
-                  </tr>
-                ))
               )}
             </tbody>
           </table>

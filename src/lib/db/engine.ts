@@ -1354,16 +1354,24 @@ export class FinanceEngine {
 
   public getAssetHoldings(asOfDate: string = '9999-99-99'): AssetHolding[] {
     const holdingsMap = new Map<string, number>(); // key: `${asset_id}:${member_id}`
+    const lastLentDateMap = new Map<string, string>(); // key: `${asset_id}:${member_id}` -> latest lent date
     const events = this.state.asset_events.filter(
       (e) => e.member_id !== null && e.occurred_on <= asOfDate
     );
 
-    for (const e of events) {
+    const sortedEvents = [...events].sort((a, b) => a.occurred_on.localeCompare(b.occurred_on) || a.id - b.id);
+
+    for (const e of sortedEvents) {
       const key = `${e.asset_id}:${e.member_id}`;
       let delta = 0;
-      if (e.kind === 'lent') delta = e.quantity;
-      else if (e.kind === 'returned') delta = -e.quantity;
-      else if (e.kind === 'damaged' || e.kind === 'lost') delta = -e.quantity;
+      if (e.kind === 'lent') {
+        delta = e.quantity;
+        lastLentDateMap.set(key, e.occurred_on);
+      } else if (e.kind === 'returned') {
+        delta = -e.quantity;
+      } else if (e.kind === 'damaged' || e.kind === 'lost') {
+        delta = -e.quantity;
+      }
 
       const current = holdingsMap.get(key) ?? 0;
       holdingsMap.set(key, current + delta);
@@ -1384,6 +1392,7 @@ export class FinanceEngine {
           member_id,
           member_name: membersMap.get(member_id) ?? 'Unknown',
           quantity: qty,
+          borrowed_date: lastLentDateMap.get(key) || undefined,
         });
       }
     }
