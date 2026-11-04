@@ -138,7 +138,7 @@ export interface Asset {
   ownership: AssetOwner;
   tag: string | null;
   note: string;
-  created_at: string;
+  created_at?: string;
 }
 
 export interface AssetEvent {

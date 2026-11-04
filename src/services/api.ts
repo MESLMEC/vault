@@ -1273,7 +1273,6 @@ export const api = {
           ownership: a.ownership as Asset['ownership'],
           tag: a.tag,
           note: a.note,
-          created_at: new Date().toISOString(),
         }));
       } catch (err) {
         console.warn('Backend getAssets failed:', err);
@@ -1430,7 +1429,7 @@ export const api = {
     member_id?: number | null;
     cost_center_id?: number | null;
     occurred_on: string;
-    recorded_by: string;
+    recorded_by?: string;
     note?: string;
     source?: AcquireSource | null;
     ledger_transaction_id?: number | null;

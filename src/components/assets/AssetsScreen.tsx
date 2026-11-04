@@ -19,8 +19,8 @@ import {
   AssetState,
   AssetHolding,
   Member,
-  CostCenter,
   AssetEventKind,
+  AcquireSource,
 } from '../../lib/db/types';
 import { api } from '../../services/api';
 import { formatDate } from '../../lib/utils';
@@ -40,7 +40,6 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
   const [holdings, setHoldings] = useState<AssetHolding[]>([]);
   const [adminQueue, setAdminQueue] = useState<AssetState[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
-  const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
 
   // Action Modals
   const [showAddAsset, setShowAddAsset] = useState(false);
@@ -48,7 +47,7 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
   const [actionKind, setActionKind] = useState<AssetEventKind>('lent');
   const [actionQuantity, setActionQuantity] = useState('1');
   const [actionMemberId, setActionMemberId] = useState('');
-  const [actionCostCenterId, setActionCostCenterId] = useState('');
+  const [actionSource, setActionSource] = useState<AcquireSource>('purchase');
   const [actionNote, setActionNote] = useState('');
   const [actionDate, setActionDate] = useState(new Date().toISOString().split('T')[0]);
 
@@ -58,27 +57,24 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
   const [newAssetOwner, setNewAssetOwner] = useState<Asset['ownership']>('lab');
   const [newAssetTag, setNewAssetTag] = useState('');
   const [newAssetNote, setNewAssetNote] = useState('');
-  const [newAssetInitialQty, setNewAssetInitialQty] = useState('1');
 
   const [isCreatingAsset, setIsCreatingAsset] = useState(false);
   const [isRecordingEvent, setIsRecordingEvent] = useState(false);
 
   const loadData = async () => {
     try {
-      const [ast, st, hld, queue, mems, ccs] = await Promise.all([
+      const [ast, st, hld, queue, mems] = await Promise.all([
         api.getAssets(),
         api.getAssetState(),
         api.getAssetHoldings(),
         api.getAdminReplacementQueue(),
         api.getMembers(),
-        api.getCostCenters(),
       ]);
       setAssets(ast);
       setAssetStates(st);
       setHoldings(hld);
       setAdminQueue(queue);
       setMembers(mems);
-      setCostCenters(ccs);
     } catch (e) {
       console.error(e);
     }
@@ -90,26 +86,18 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
 
   const handleCreateAsset = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!newAssetName.trim()) {
+      onError(new Error('Equipment name is required.'));
+      return;
+    }
     setIsCreatingAsset(true);
     try {
-      const created = await api.createAsset({
+      await api.createAsset({
         name: newAssetName.trim(),
         mode: newAssetMode,
         ownership: newAssetOwner,
         tag: newAssetTag.trim() || null,
         note: newAssetNote.trim(),
-      });
-
-      // Record initial acquisition
-      const qty = parseInt(newAssetInitialQty, 10) || 1;
-      await api.recordAssetEvent({
-        asset_id: created.id,
-        kind: 'acquired',
-        quantity: qty,
-        occurred_on: new Date().toISOString().split('T')[0],
-        recorded_by: 'Treasurer',
-        note: 'Initial inventory acquisition',
-        source: newAssetOwner === 'admin' ? 'admin' : 'purchase',
       });
 
       setNewAssetName('');
@@ -129,20 +117,31 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
     e.preventDefault();
     if (!actionAsset) return;
 
+    const qty = parseInt(actionQuantity, 10);
+    if (isNaN(qty) || qty <= 0) {
+      onError(new Error('Quantity must be at least 1.'));
+      return;
+    }
+    if (['lent', 'returned'].includes(actionKind) && !actionMemberId) {
+      onError(new Error('Please select a member for lending or returning equipment.'));
+      return;
+    }
+    if (['damaged', 'lost', 'scrapped', 'exchanged'].includes(actionKind) && !actionNote.trim()) {
+      onError(new Error('A note explaining the reason is required for this action.'));
+      return;
+    }
+
     setIsRecordingEvent(true);
     try {
-      const qty = parseInt(actionQuantity, 10);
       const mId = actionMemberId ? parseInt(actionMemberId, 10) : null;
-      const ccId = actionCostCenterId ? parseInt(actionCostCenterId, 10) : null;
 
       await api.recordAssetEvent({
         asset_id: actionAsset.asset_id,
         kind: actionKind,
-        quantity: qty,
-        member_id: mId,
-        cost_center_id: ccId,
+        quantity: actionAsset.mode === 'individual' ? 1 : qty,
         occurred_on: actionDate,
-        recorded_by: 'Treasurer',
+        member_id: ['lent', 'returned'].includes(actionKind) ? mId : null,
+        source: actionKind === 'acquired' ? actionSource : null,
         note: actionNote.trim(),
       });
 
@@ -304,6 +303,19 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
 
                       <td className="py-3 px-4 text-center whitespace-nowrap">
                         <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => {
+                              setActionAsset(a);
+                              setActionKind('acquired');
+                              setActionQuantity('1');
+                              setActionSource(a.ownership === 'admin' ? 'admin' : 'purchase');
+                              setActionNote('');
+                            }}
+                            className="rounded border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/60 dark:bg-emerald-950/30 px-2 py-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/40"
+                            title="Add / Acquire Stock"
+                          >
+                            + Stock
+                          </button>
                           {a.stock > 0 && (
                             <button
                               onClick={() => {
@@ -507,6 +519,7 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
                   onChange={(e) => setActionKind(e.target.value as AssetEventKind)}
                   className="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 outline-none"
                 >
+                  <option value="acquired">Acquire / Add Stock</option>
                   <option value="lent">Lend to Member</option>
                   <option value="returned">Return to Lab Stock</option>
                   <option value="damaged">Mark Damaged</option>
@@ -516,6 +529,26 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
                   <option value="scrapped">Scrap / Decommission</option>
                 </select>
               </div>
+
+              {actionKind === 'acquired' && (
+                <div>
+                  <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                    Acquisition Source
+                  </label>
+                  <select
+                    value={actionSource}
+                    onChange={(e) => setActionSource(e.target.value as AcquireSource)}
+                    className="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 outline-none"
+                  >
+                    <option value="purchase">Purchase (Club Funds)</option>
+                    <option value="admin">College Administration</option>
+                    <option value="project_return">Project Return</option>
+                    <option value="donation">Donation / Alumni</option>
+                    <option value="replacement">Warranty / Vendor Replacement</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+              )}
 
               {['lent', 'returned'].includes(actionKind) && (
                 <div>
@@ -621,7 +654,7 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
             <form onSubmit={handleCreateAsset} className="mt-4 space-y-4">
               <div>
                 <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                  Equipment Name & Model
+                  Equipment Name & Model <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -636,9 +669,10 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                    Tracking Mode
+                    Tracking Mode <span className="text-red-500">*</span>
                   </label>
                   <select
+                    required
                     value={newAssetMode}
                     onChange={(e) => setNewAssetMode(e.target.value as Asset['mode'])}
                     className="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 outline-none"
@@ -650,9 +684,10 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
 
                 <div>
                   <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                    Ownership
+                    Ownership <span className="text-red-500">*</span>
                   </label>
                   <select
+                    required
                     value={newAssetOwner}
                     onChange={(e) => setNewAssetOwner(e.target.value as Asset['ownership'])}
                     className="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 outline-none"
@@ -663,39 +698,22 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                    Inventory Tag (optional)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. ADMIN-EE-04"
-                    value={newAssetTag}
-                    onChange={(e) => setNewAssetTag(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800 px-3 py-2 text-sm font-mono text-zinc-900 dark:text-zinc-100 outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                    Initial Quantity
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    required
-                    disabled={newAssetMode === 'individual'}
-                    value={newAssetMode === 'individual' ? '1' : newAssetInitialQty}
-                    onChange={(e) => setNewAssetInitialQty(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800 px-3 py-2 text-sm font-mono text-zinc-900 dark:text-zinc-100 outline-none"
-                  />
-                </div>
+              <div>
+                <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                  Inventory Tag (optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. ADMIN-EE-04"
+                  value={newAssetTag}
+                  onChange={(e) => setNewAssetTag(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800 px-3 py-2 text-sm font-mono text-zinc-900 dark:text-zinc-100 outline-none"
+                />
               </div>
 
               <div>
                 <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                  Note / Description
+                  Note / Description (optional)
                 </label>
                 <input
                   type="text"
@@ -720,7 +738,7 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
                   className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-xs font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isCreatingAsset && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
-                  <span>{isCreatingAsset ? 'Adding...' : 'Add Equipment'}</span>
+                  <span>{isCreatingAsset ? 'Registering...' : 'Register Equipment'}</span>
                 </button>
               </div>
             </form>

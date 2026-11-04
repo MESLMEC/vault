@@ -253,4 +253,72 @@ describe('Backend API Client Contract Tests', () => {
       /non-blank note is required/
     );
   });
+
+  it('POST /api/v1/assets creates asset without quantity field', async () => {
+    mockResponse = {
+      status: 201,
+      ok: true,
+      body: {
+        id: 15,
+        name: 'Rigol DS1054Z',
+        mode: 'individual',
+        ownership: 'lab',
+        tag: 'OSC-01',
+        note: 'Main bench',
+      },
+    };
+
+    const result = await backendApi.createAsset({
+      name: 'Rigol DS1054Z',
+      mode: 'individual',
+      ownership: 'lab',
+      tag: 'OSC-01',
+      note: 'Main bench',
+    });
+
+    assert.strictEqual(lastFetch?.url, '/api/v1/assets');
+    assert.strictEqual(lastFetch?.options?.method, 'POST');
+    const body = JSON.parse(lastFetch?.options?.body as string);
+    assert.strictEqual(body.name, 'Rigol DS1054Z');
+    assert.strictEqual(body.mode, 'individual');
+    assert.strictEqual(body.ownership, 'lab');
+    assert.strictEqual(body.tag, 'OSC-01');
+    assert.strictEqual(body.note, 'Main bench');
+    assert.strictEqual('quantity' in body, false);
+    assert.strictEqual(result.id, 15);
+  });
+
+  it('POST /api/v1/assets/{id}/events sends schema-compliant fields', async () => {
+    mockResponse = {
+      status: 201,
+      ok: true,
+      body: {
+        id: 101,
+        asset_id: 15,
+        kind: 'acquired',
+        quantity: 5,
+        occurred_on: '2026-11-04',
+        note: 'New batch',
+      },
+    };
+
+    await backendApi.recordAssetEvent(15, {
+      kind: 'acquired',
+      quantity: 5,
+      occurred_on: '2026-11-04',
+      note: 'New batch',
+      source: 'purchase',
+    });
+
+    assert.strictEqual(lastFetch?.url, '/api/v1/assets/15/events');
+    assert.strictEqual(lastFetch?.options?.method, 'POST');
+    const body = JSON.parse(lastFetch?.options?.body as string);
+    assert.strictEqual(body.kind, 'acquired');
+    assert.strictEqual(body.quantity, 5);
+    assert.strictEqual(body.occurred_on, '2026-11-04');
+    assert.strictEqual(body.source, 'purchase');
+    assert.strictEqual(body.note, 'New batch');
+    assert.strictEqual('cost_center_id' in body, false);
+    assert.strictEqual('recorded_by' in body, false);
+  });
 });

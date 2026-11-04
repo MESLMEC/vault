@@ -733,7 +733,7 @@ export class FinanceEngine {
       kind: params.kind,
       occurred_on: params.occurred_on,
       recorded_at: new Date().toISOString(),
-      recorded_by: params.recorded_by,
+      recorded_by: params.recorded_by || 'Treasurer',
       note,
       tag: params.tag ?? null,
       cost_center_id: params.cost_center_id ?? null,
@@ -1399,7 +1399,7 @@ export class FinanceEngine {
     member_id?: number | null;
     cost_center_id?: number | null;
     occurred_on: string;
-    recorded_by: string;
+    recorded_by?: string;
     note?: string;
     source?: AcquireSource | null;
     ledger_transaction_id?: number | null;
@@ -1484,7 +1484,7 @@ export class FinanceEngine {
       cost_center_id: params.cost_center_id ?? null,
       occurred_on: params.occurred_on,
       recorded_at: new Date().toISOString(),
-      recorded_by: params.recorded_by,
+      recorded_by: params.recorded_by || 'Treasurer',
       note,
       source: params.source ?? null,
       ledger_transaction_id: params.ledger_transaction_id ?? null,
