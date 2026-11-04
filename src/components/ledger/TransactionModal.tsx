@@ -120,6 +120,15 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       setPreflightWarning(null);
       setIsSubmitting(false);
       setEnvelopeAutoSelectedHint(null);
+      setCreatedResult(null);
+      setAmount('');
+      setNote('');
+      setTag('');
+      setCostCenterId('');
+      setMemberId('');
+      setSelectedEnvelopeId('');
+      setTargetEnvelopeId('');
+      setDate(new Date().toISOString().split('T')[0]);
       return;
     }
 
@@ -183,7 +192,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
   // Persist draft to localStorage on form field change
   useEffect(() => {
-    if (!isOpen || step !== 'input') return;
+    if (!isOpen || step !== 'input' || isSubmitting || createdResult) return;
     // Don't save if completely empty
     if (!amount && !note && !costCenterId && !memberId) return;
 
@@ -205,7 +214,28 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     } catch {
       // storage full or disabled
     }
-  }, [isOpen, step, kind, amount, date, note, tag, costCenterId, memberId, selectedEnvelopeId, targetEnvelopeId, source]);
+  }, [isOpen, step, isSubmitting, createdResult, kind, amount, date, note, tag, costCenterId, memberId, selectedEnvelopeId, targetEnvelopeId, source]);
+
+  const clearFormFields = () => {
+    setAmount('');
+    setDate(new Date().toISOString().split('T')[0]);
+    setNote('');
+    setTag('');
+    setCostCenterId('');
+    setMemberId('');
+    setSelectedEnvelopeId('');
+    setTargetEnvelopeId('');
+    setPreflightErrors([]);
+    setPreflightWarning(null);
+    setEnvelopeAutoSelectedHint(null);
+    setHasDraft(false);
+    setDraftSavedAt(null);
+    try {
+      localStorage.removeItem(DRAFT_KEY);
+    } catch {
+      // ignore
+    }
+  };
 
   // Vault #3: Auto-select envelope from cost center kind
   const handleCostCenterChange = (ccId: string) => {
@@ -262,16 +292,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   };
 
   const handleDiscardDraft = () => {
-    localStorage.removeItem(DRAFT_KEY);
-    setHasDraft(false);
-    setAmount('');
-    setNote('');
-    setTag('');
-    setCostCenterId('');
-    setMemberId('');
-    setSelectedEnvelopeId('');
-    setDate(new Date().toISOString().split('T')[0]);
-    setEnvelopeAutoSelectedHint(null);
+    clearFormFields();
   };
 
   // Preflight validation to transition to Review
@@ -374,7 +395,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     // Soft duplicate detection
     const match = recentEntries.find((tx) => {
       if (tx.occurred_on !== date) return false;
-      const txAmt = Math.abs(tx.lines[0]?.amount || 0);
+      const txAmt = Math.abs(tx.lines[0]?.amount || tx.size || 0);
       if (memId && tx.member_id === memId && txAmt === amt) return true;
       if (kind === 'expense' && tx.kind === 'expense' && txAmt === amt && tx.lines.some((l) => l.envelope_id === fromEnvId)) {
         return true;
@@ -467,8 +488,25 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
         });
       }
 
-      // Clear draft on successful 201 write
-      localStorage.removeItem(DRAFT_KEY);
+      // Clear draft and reset form fields so recorded transaction data never persists
+      try {
+        localStorage.removeItem(DRAFT_KEY);
+      } catch {
+        // ignore
+      }
+      setHasDraft(false);
+      setDraftSavedAt(null);
+      setAmount('');
+      setNote('');
+      setTag('');
+      setCostCenterId('');
+      setMemberId('');
+      setSelectedEnvelopeId('');
+      setTargetEnvelopeId('');
+      setDate(new Date().toISOString().split('T')[0]);
+      setEnvelopeAutoSelectedHint(null);
+      setPreflightErrors([]);
+      setPreflightWarning(null);
 
       const memObj = members.find((m) => m.id === memId);
       const envObj = envelopes.find((e) => e.id === (kind === 'deposit' ? parseInt(selectedEnvelopeId, 10) : fromEnvId));
@@ -498,22 +536,14 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     if (isSubmitting) return; // Prevent dismiss in-flight
     setStep('input');
     setCreatedResult(null);
-    setPreflightErrors([]);
-    setPreflightWarning(null);
+    clearFormFields();
     onClose();
   };
 
   const handleResetForAnother = () => {
     setStep('input');
     setCreatedResult(null);
-    setAmount('');
-    setNote('');
-    setTag('');
-    setSelectedEnvelopeId('');
-    setCostCenterId('');
-    setMemberId('');
-    setPreflightErrors([]);
-    setPreflightWarning(null);
+    clearFormFields();
   };
 
   if (!isOpen) return null;
@@ -674,13 +704,40 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                       ৳
                     </span>
                     <input
-                      type="number"
-                      min="1"
-                      step="1"
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
                       required
                       placeholder="500"
                       value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
+                      onChange={(e) => {
+                        // Strictly digits only (whole taka, no letters, no decimals, no negatives)
+                        const val = e.target.value.replace(/\D/g, '');
+                        setAmount(val);
+                      }}
+                      onKeyDown={(e) => {
+                        // Block any non-digit character keystroke
+                        if (
+                          !/^[0-9]$/.test(e.key) &&
+                          ![
+                            'Backspace',
+                            'Delete',
+                            'Tab',
+                            'Escape',
+                            'Enter',
+                            'ArrowLeft',
+                            'ArrowRight',
+                            'ArrowUp',
+                            'ArrowDown',
+                            'Home',
+                            'End',
+                          ].includes(e.key) &&
+                          !e.ctrlKey &&
+                          !e.metaKey
+                        ) {
+                          e.preventDefault();
+                        }
+                      }}
                       className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800 pl-7 pr-3 py-2 text-sm font-mono text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 outline-none focus:border-zinc-400"
                     />
                   </div>

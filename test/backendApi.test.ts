@@ -253,4 +253,185 @@ describe('Backend API Client Contract Tests', () => {
       /non-blank note is required/
     );
   });
+
+  it('POST /api/v1/assets creates asset without quantity field', async () => {
+    mockResponse = {
+      status: 201,
+      ok: true,
+      body: {
+        id: 15,
+        name: 'Rigol DS1054Z',
+        mode: 'individual',
+        ownership: 'lab',
+        tag: 'OSC-01',
+        note: 'Main bench',
+      },
+    };
+
+    const result = await backendApi.createAsset({
+      name: 'Rigol DS1054Z',
+      mode: 'individual',
+      ownership: 'lab',
+      tag: 'OSC-01',
+      note: 'Main bench',
+    });
+
+    assert.strictEqual(lastFetch?.url, '/api/v1/assets');
+    assert.strictEqual(lastFetch?.options?.method, 'POST');
+    const body = JSON.parse(lastFetch?.options?.body as string);
+    assert.strictEqual(body.name, 'Rigol DS1054Z');
+    assert.strictEqual(body.mode, 'individual');
+    assert.strictEqual(body.ownership, 'lab');
+    assert.strictEqual(body.tag, 'OSC-01');
+    assert.strictEqual(body.note, 'Main bench');
+    assert.strictEqual('quantity' in body, false);
+    assert.strictEqual(result.id, 15);
+  });
+
+  it('POST /api/v1/assets/{id}/events sends schema-compliant fields including ledger_transaction_id for purchases', async () => {
+    mockResponse = {
+      status: 201,
+      ok: true,
+      body: {
+        id: 101,
+        asset_id: 15,
+        kind: 'acquired',
+        quantity: 5,
+        occurred_on: '2026-11-04',
+        note: 'New batch',
+        ledger_transaction_id: 10,
+      },
+    };
+
+    await backendApi.recordAssetEvent(15, {
+      kind: 'acquired',
+      quantity: 5,
+      occurred_on: '2026-11-04',
+      note: 'New batch',
+      source: 'purchase',
+      ledger_transaction_id: 10,
+    });
+
+    assert.strictEqual(lastFetch?.url, '/api/v1/assets/15/events');
+    assert.strictEqual(lastFetch?.options?.method, 'POST');
+    const body = JSON.parse(lastFetch?.options?.body as string);
+    assert.strictEqual(body.kind, 'acquired');
+    assert.strictEqual(body.quantity, 5);
+    assert.strictEqual(body.occurred_on, '2026-11-04');
+    assert.strictEqual(body.source, 'purchase');
+    assert.strictEqual(body.ledger_transaction_id, 10);
+    assert.strictEqual(body.note, 'New batch');
+    assert.strictEqual('cost_center_id' in body, false);
+    assert.strictEqual('recorded_by' in body, false);
+  });
+
+  it('POST /api/v1/assets/{id}/events/{event_id}/fix returns FixEventOut with ledger_transaction_id', async () => {
+    mockResponse = {
+      status: 201,
+      ok: true,
+      body: {
+        id: 102,
+        asset_id: 15,
+        kind: 'acquired',
+        quantity: 4,
+        occurred_on: '2026-11-04',
+        note: 'Original note',
+        reversal_id: 103,
+        ledger_transaction_id: 10,
+      },
+    };
+
+    const fixOut = await backendApi.fixAssetEvent(15, 101, {
+      quantity: 4,
+      occurred_on: '2026-11-04',
+      note: 'Count correction',
+    });
+
+    assert.strictEqual(lastFetch?.url, '/api/v1/assets/15/events/101/fix');
+    assert.strictEqual(lastFetch?.options?.method, 'POST');
+    assert.strictEqual(fixOut.id, 102);
+    assert.strictEqual(fixOut.reversal_id, 103);
+    assert.strictEqual(fixOut.ledger_transaction_id, 10);
+  });
+
+  it('GET /api/v1/entries receives entry lines, net_effect, and size (issue #5)', async () => {
+    mockResponse = {
+      status: 200,
+      ok: true,
+      body: [
+        {
+          id: 42,
+          tenure_id: 1,
+          kind: 'deposit',
+          occurred_on: '2026-02-01',
+          recorded_at: '2026-02-01T10:00:00Z',
+          recorded_by: 'treasurer',
+          note: 'Sponsorship intake',
+          tag: 'fest',
+          cost_center_id: null,
+          member_id: null,
+          source: 'sponsorship',
+          corrected_from: null,
+          lines: [
+            { envelope_id: 1, amount: 5000 },
+          ],
+          net_effect: 5000,
+          size: 5000,
+        },
+        {
+          id: 43,
+          tenure_id: 1,
+          kind: 'transfer',
+          occurred_on: '2026-02-02',
+          recorded_at: '2026-02-02T11:00:00Z',
+          recorded_by: 'treasurer',
+          note: 'Fund event',
+          tag: 'allocation',
+          cost_center_id: 2,
+          member_id: null,
+          source: null,
+          corrected_from: null,
+          lines: [
+            { envelope_id: 1, amount: -2000 },
+            { envelope_id: 2, amount: 2000 },
+          ],
+          net_effect: 0,
+          size: 2000,
+        },
+      ],
+    };
+
+    const entries = await backendApi.getEntries();
+    assert.strictEqual(lastFetch?.url, '/api/v1/entries');
+    assert.strictEqual(entries.length, 2);
+
+    const dep = entries[0];
+    assert.strictEqual(dep.id, 42);
+    assert.strictEqual(dep.lines.length, 1);
+    assert.strictEqual(dep.lines[0].envelope_id, 1);
+    assert.strictEqual(dep.lines[0].amount, 5000);
+    assert.strictEqual(dep.net_effect, 5000);
+    assert.strictEqual(dep.size, 5000);
+
+    const xfer = entries[1];
+    assert.strictEqual(xfer.id, 43);
+    assert.strictEqual(xfer.lines.length, 2);
+    assert.strictEqual(xfer.lines[0].amount, -2000);
+    assert.strictEqual(xfer.lines[1].amount, 2000);
+    assert.strictEqual(xfer.net_effect, 0);
+    assert.strictEqual(xfer.size, 2000);
+
+    // Verify getLedgerLines parses the entry lines with transaction ids
+    const lines = await backendApi.getLedgerLines();
+    assert.strictEqual(lines.length, 3);
+    assert.strictEqual(lines[0].transaction_id, 42);
+    assert.strictEqual(lines[0].envelope_id, 1);
+    assert.strictEqual(lines[0].amount, 5000);
+    assert.strictEqual(lines[1].transaction_id, 43);
+    assert.strictEqual(lines[1].envelope_id, 1);
+    assert.strictEqual(lines[1].amount, -2000);
+    assert.strictEqual(lines[2].transaction_id, 43);
+    assert.strictEqual(lines[2].envelope_id, 2);
+    assert.strictEqual(lines[2].amount, 2000);
+  });
 });

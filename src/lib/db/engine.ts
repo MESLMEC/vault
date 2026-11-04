@@ -567,9 +567,15 @@ export class FinanceEngine {
 
     return this.state.ledger_transactions.map((tx) => {
       const lines = this.state.ledger_lines.filter((l) => l.transaction_id === tx.id);
+      const net_effect = lines.reduce((s, l) => s + l.amount, 0);
+      const posSum = lines.filter((l) => l.amount > 0).reduce((s, l) => s + l.amount, 0);
+      const negSum = lines.filter((l) => l.amount < 0).reduce((s, l) => s + l.amount, 0);
+      const size = Math.max(posSum, -negSum);
       return {
         ...tx,
         lines,
+        net_effect,
+        size,
         is_voided: reversedIds.has(tx.id),
         corrected_from: tx.replaces_id,
         cost_center_name: tx.cost_center_id ? ccMap.get(tx.cost_center_id) : undefined,
@@ -733,7 +739,7 @@ export class FinanceEngine {
       kind: params.kind,
       occurred_on: params.occurred_on,
       recorded_at: new Date().toISOString(),
-      recorded_by: params.recorded_by,
+      recorded_by: params.recorded_by || 'Treasurer',
       note,
       tag: params.tag ?? null,
       cost_center_id: params.cost_center_id ?? null,
@@ -1348,16 +1354,24 @@ export class FinanceEngine {
 
   public getAssetHoldings(asOfDate: string = '9999-99-99'): AssetHolding[] {
     const holdingsMap = new Map<string, number>(); // key: `${asset_id}:${member_id}`
+    const lastLentDateMap = new Map<string, string>(); // key: `${asset_id}:${member_id}` -> latest lent date
     const events = this.state.asset_events.filter(
       (e) => e.member_id !== null && e.occurred_on <= asOfDate
     );
 
-    for (const e of events) {
+    const sortedEvents = [...events].sort((a, b) => a.occurred_on.localeCompare(b.occurred_on) || a.id - b.id);
+
+    for (const e of sortedEvents) {
       const key = `${e.asset_id}:${e.member_id}`;
       let delta = 0;
-      if (e.kind === 'lent') delta = e.quantity;
-      else if (e.kind === 'returned') delta = -e.quantity;
-      else if (e.kind === 'damaged' || e.kind === 'lost') delta = -e.quantity;
+      if (e.kind === 'lent') {
+        delta = e.quantity;
+        lastLentDateMap.set(key, e.occurred_on);
+      } else if (e.kind === 'returned') {
+        delta = -e.quantity;
+      } else if (e.kind === 'damaged' || e.kind === 'lost') {
+        delta = -e.quantity;
+      }
 
       const current = holdingsMap.get(key) ?? 0;
       holdingsMap.set(key, current + delta);
@@ -1378,6 +1392,7 @@ export class FinanceEngine {
           member_id,
           member_name: membersMap.get(member_id) ?? 'Unknown',
           quantity: qty,
+          borrowed_date: lastLentDateMap.get(key) || undefined,
         });
       }
     }
@@ -1399,7 +1414,7 @@ export class FinanceEngine {
     member_id?: number | null;
     cost_center_id?: number | null;
     occurred_on: string;
-    recorded_by: string;
+    recorded_by?: string;
     note?: string;
     source?: AcquireSource | null;
     ledger_transaction_id?: number | null;
@@ -1420,6 +1435,29 @@ export class FinanceEngine {
 
     if (['lent', 'returned'].includes(params.kind) && !params.member_id) {
       throw new RefusalError('Lending and returning must specify a member.');
+    }
+
+    if (!['lent', 'returned', 'damaged', 'lost'].includes(params.kind) && params.member_id != null) {
+      throw new RefusalError(`A ${params.kind} event cannot name a member.`);
+    }
+
+    if (params.kind === 'acquired' && !params.source) {
+      throw new RefusalError('A source is required for acquired events.');
+    }
+
+    if (params.kind !== 'acquired' && params.source) {
+      throw new RefusalError('A source cannot be specified for non-acquired events.');
+    }
+
+    if (params.kind === 'acquired' && params.source === 'purchase' && !params.ledger_transaction_id) {
+      throw new RefusalError(
+        'A purchase acquisition must name the ledger expense that paid for it.',
+        'Record the expense in the ledger first, then select it as the paying transaction.'
+      );
+    }
+
+    if (params.kind !== 'acquired' && params.ledger_transaction_id) {
+      throw new RefusalError('A ledger transaction link is only valid for acquired events.');
     }
 
     if (params.kind === 'lent') {
@@ -1484,7 +1522,7 @@ export class FinanceEngine {
       cost_center_id: params.cost_center_id ?? null,
       occurred_on: params.occurred_on,
       recorded_at: new Date().toISOString(),
-      recorded_by: params.recorded_by,
+      recorded_by: params.recorded_by || 'Treasurer',
       note,
       source: params.source ?? null,
       ledger_transaction_id: params.ledger_transaction_id ?? null,
@@ -1494,6 +1532,45 @@ export class FinanceEngine {
     this.state.asset_events.push(ev);
     this.notify();
     return ev;
+  }
+
+  public getAssetActivity(fromDate: string, toDate: string): Array<{
+    asset_name: string;
+    ownership: string;
+    kind: string;
+    source: string | null;
+    units: number;
+    events: number;
+  }> {
+    if (fromDate > toDate) return [];
+    const reversedIds = new Set(
+      this.state.asset_events.filter((e) => e.reverses_id !== null).map((e) => e.reverses_id)
+    );
+    const currentEvents = this.state.asset_events.filter(
+      (e) => e.reverses_id === null && !reversedIds.has(e.id)
+    );
+    const assetMap = new Map(this.state.assets.map((a) => [a.id, a]));
+    const groups = new Map<string, { asset_name: string; ownership: string; kind: string; source: string | null; units: number; events: number }>();
+
+    for (const ev of currentEvents) {
+      if (ev.occurred_on >= fromDate && ev.occurred_on <= toDate) {
+        const asset = assetMap.get(ev.asset_id);
+        if (!asset) continue;
+        const key = `${asset.name}::${asset.ownership}::${ev.kind}::${ev.source || ''}`;
+        const existing = groups.get(key) || {
+          asset_name: asset.name,
+          ownership: asset.ownership,
+          kind: ev.kind,
+          source: ev.source,
+          units: 0,
+          events: 0,
+        };
+        existing.units += ev.quantity;
+        existing.events += 1;
+        groups.set(key, existing);
+      }
+    }
+    return Array.from(groups.values()).sort((a, b) => a.asset_name.localeCompare(b.asset_name));
   }
 
   // =====================================================================================

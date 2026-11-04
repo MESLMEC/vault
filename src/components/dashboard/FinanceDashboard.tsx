@@ -141,11 +141,16 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
     let totalOutflow = 0;
 
     validEntries.forEach((tx) => {
+      const lines = tx.lines || [];
       if (tx.kind === 'deposit' || tx.kind === 'opening') {
-        const sumIn = tx.lines.reduce((s, l) => (l.amount > 0 ? s + l.amount : s), 0);
+        const sumIn = lines.length > 0
+          ? lines.reduce((s, l) => (l.amount > 0 ? s + l.amount : s), 0)
+          : (tx.net_effect !== undefined && tx.net_effect > 0 ? tx.net_effect : (tx.size || 0));
         totalInflow += sumIn;
       } else if (tx.kind === 'expense') {
-        const sumOut = tx.lines.reduce((s, l) => (l.amount < 0 ? s + Math.abs(l.amount) : s), 0);
+        const sumOut = lines.length > 0
+          ? lines.reduce((s, l) => (l.amount < 0 ? s + Math.abs(l.amount) : s), 0)
+          : (tx.net_effect !== undefined && tx.net_effect < 0 ? Math.abs(tx.net_effect) : (tx.size || 0));
         totalOutflow += sumOut;
       }
     });
@@ -216,12 +221,17 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
 
       const item = monthMap.get(monthKey)!;
 
+      const lines = tx.lines || [];
       if (tx.kind === 'deposit' || tx.kind === 'opening') {
-        const inAmt = tx.lines.reduce((s, l) => (l.amount > 0 ? s + l.amount : s), 0);
+        const inAmt = lines.length > 0
+          ? lines.reduce((s, l) => (l.amount > 0 ? s + l.amount : s), 0)
+          : (tx.net_effect !== undefined && tx.net_effect > 0 ? tx.net_effect : (tx.size || 0));
         item.inflow += inAmt;
         runningBalance += inAmt;
       } else if (tx.kind === 'expense') {
-        const outAmt = tx.lines.reduce((s, l) => (l.amount < 0 ? s + Math.abs(l.amount) : s), 0);
+        const outAmt = lines.length > 0
+          ? lines.reduce((s, l) => (l.amount < 0 ? s + Math.abs(l.amount) : s), 0)
+          : (tx.net_effect !== undefined && tx.net_effect < 0 ? Math.abs(tx.net_effect) : (tx.size || 0));
         item.outflow += outAmt;
         runningBalance -= outAmt;
       }
@@ -249,11 +259,17 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
 
     const dayDeltaMap = new Map<string, number>();
     valid.forEach((tx) => {
+      const lines = tx.lines || [];
       let net = 0;
       if (tx.kind === 'deposit' || tx.kind === 'opening') {
-        net = (tx.lines || []).reduce((s, l) => (l.amount > 0 ? s + l.amount : s), 0);
+        net = lines.length > 0
+          ? lines.reduce((s, l) => (l.amount > 0 ? s + l.amount : s), 0)
+          : (tx.net_effect !== undefined && tx.net_effect > 0 ? tx.net_effect : (tx.size || 0));
       } else if (tx.kind === 'expense') {
-        net = -(tx.lines || []).reduce((s, l) => (l.amount < 0 ? s + Math.abs(l.amount) : s), 0);
+        const outAmt = lines.length > 0
+          ? lines.reduce((s, l) => (l.amount < 0 ? s + Math.abs(l.amount) : s), 0)
+          : (tx.net_effect !== undefined && tx.net_effect < 0 ? Math.abs(tx.net_effect) : (tx.size || 0));
+        net = -outAmt;
       }
       dayDeltaMap.set(tx.occurred_on, (dayDeltaMap.get(tx.occurred_on) || 0) + net);
     });
@@ -359,7 +375,10 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
     entries.forEach((tx) => {
       if (!tx.is_voided && (tx.kind === 'deposit' || tx.kind === 'opening')) {
         const src = tx.kind === 'opening' ? 'opening_balance' : (tx.source || 'other');
-        const inAmt = (tx.lines || []).reduce((s, l) => (l.amount > 0 ? s + l.amount : s), 0);
+        const lines = tx.lines || [];
+        const inAmt = lines.length > 0
+          ? lines.reduce((s, l) => (l.amount > 0 ? s + l.amount : s), 0)
+          : (tx.net_effect !== undefined && tx.net_effect > 0 ? tx.net_effect : (tx.size || 0));
         sourceMap[src] = (sourceMap[src] || 0) + inAmt;
       }
     });
@@ -1198,7 +1217,12 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
                   .map((tx) => {
                     const isPositive =
                       tx.kind === 'deposit' || tx.kind === 'opening' || tx.kind === 'sweep';
-                    const totalAmt = tx.lines.reduce((s, l) => s + Math.abs(l.amount), 0);
+                    const displayAmt =
+                      tx.size !== undefined
+                        ? tx.size
+                        : tx.kind === 'transfer' || tx.kind === 'sweep'
+                        ? Math.max(...(tx.lines || []).map((l) => l.amount), 0)
+                        : Math.abs((tx.lines || []).reduce((s, l) => s + l.amount, 0) || tx.net_effect || 0);
                     const isFee =
                       tx.source === 'weekly_fee' ||
                       tx.tag === 'fees' ||
@@ -1254,10 +1278,10 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({
                             }
                           >
                             {tx.kind === 'expense'
-                              ? `-${formatTaka(totalAmt)}`
+                              ? `-${formatTaka(displayAmt)}`
                               : isPositive
-                              ? `+${formatTaka(totalAmt)}`
-                              : formatTaka(totalAmt)}
+                              ? `+${formatTaka(displayAmt)}`
+                              : formatTaka(displayAmt)}
                           </span>
                         </td>
                         <td className="py-2.5 text-center">

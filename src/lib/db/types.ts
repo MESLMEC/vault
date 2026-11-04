@@ -138,7 +138,7 @@ export interface Asset {
   ownership: AssetOwner;
   tag: string | null;
   note: string;
-  created_at: string;
+  created_at?: string;
 }
 
 export interface AssetEvent {
@@ -240,6 +240,8 @@ export interface LedgerEntryView extends LedgerTransaction {
   cost_center_name?: string;
   member_name?: string;
   source_label?: string;
+  net_effect?: number;
+  size?: number;
 }
 
 export interface MemberStanding {
@@ -285,6 +287,7 @@ export interface AssetHolding {
   member_id: number;
   member_name: string;
   quantity: number;
+  borrowed_date?: string;
 }
 
 export interface ReconciliationStatus {

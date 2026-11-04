@@ -20,7 +20,7 @@ export const FixAmountModal: React.FC<FixAmountModalProps> = ({
 }) => {
   if (!transaction) return null;
 
-  const currentAmt = Math.abs(transaction.lines[0]?.amount ?? 0);
+  const currentAmt = Math.abs(transaction.lines[0]?.amount ?? transaction.size ?? 0);
   const [newAmount, setNewAmount] = useState(String(currentAmt));
   const [newNote, setNewNote] = useState(transaction.note);
   const [recordedBy, setRecordedBy] = useState('Treasurer');
@@ -48,10 +48,12 @@ export const FixAmountModal: React.FC<FixAmountModalProps> = ({
     setLoading(true);
     try {
       // Re-sign according to original line direction
-      const updatedLines = transaction.lines.map((l) => ({
-        envelope_id: l.envelope_id,
-        amount: l.amount < 0 ? -amt : amt,
-      }));
+      const updatedLines = (transaction.lines && transaction.lines.length > 0)
+        ? transaction.lines.map((l) => ({
+            envelope_id: l.envelope_id,
+            amount: l.amount < 0 ? -amt : amt,
+          }))
+        : [{ envelope_id: 1, amount: transaction.kind === 'expense' ? -amt : amt }];
 
       await api.fixAmount({
         transactionId: transaction.id,
@@ -111,12 +113,37 @@ export const FixAmountModal: React.FC<FixAmountModalProps> = ({
               ৳
             </span>
             <input
-              type="number"
-              min="1"
-              step="1"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               required
               value={newAmount}
-              onChange={(e) => setNewAmount(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value.replace(/\D/g, '');
+                setNewAmount(val);
+              }}
+              onKeyDown={(e) => {
+                if (
+                  !/^[0-9]$/.test(e.key) &&
+                  ![
+                    'Backspace',
+                    'Delete',
+                    'Tab',
+                    'Escape',
+                    'Enter',
+                    'ArrowLeft',
+                    'ArrowRight',
+                    'ArrowUp',
+                    'ArrowDown',
+                    'Home',
+                    'End',
+                  ].includes(e.key) &&
+                  !e.ctrlKey &&
+                  !e.metaKey
+                ) {
+                  e.preventDefault();
+                }
+              }}
               className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800 pl-7 pr-3 py-2 text-sm font-mono text-zinc-900 dark:text-zinc-100 outline-none focus:border-zinc-400"
             />
           </div>

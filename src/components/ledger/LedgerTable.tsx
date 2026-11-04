@@ -211,11 +211,11 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
                   const isSweep = tx.kind === 'sweep';
                   const isOpening = tx.kind === 'opening';
 
-                  const netAmount = tx.lines.reduce((s, l) => s + l.amount, 0);
+                  const netAmount = (tx.lines || []).reduce((s, l) => s + l.amount, 0);
                   const displayAmt =
                     isTransfer || isSweep
-                      ? Math.max(...tx.lines.map((l) => l.amount))
-                      : Math.abs(netAmount);
+                      ? (tx.size !== undefined ? tx.size : (tx.lines && tx.lines.length > 0 ? Math.max(...tx.lines.map((l) => l.amount)) : 0))
+                      : (tx.size !== undefined && netAmount === 0 && tx.kind !== 'transfer' ? tx.size : Math.abs(netAmount || tx.net_effect || 0));
 
                   return (
                     <React.Fragment key={tx.id}>
@@ -310,8 +310,8 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
 
                         {/* Envelopes Touched */}
                         <td className="py-3 px-4 text-zinc-600 dark:text-zinc-400">
-                          {tx.lines.map((l) => (
-                            <div key={l.id} className="text-[11px] font-mono leading-tight">
+                          {(tx.lines || []).map((l, idx) => (
+                            <div key={l.id ?? `${tx.id}-${idx}`} className="text-[11px] font-mono leading-tight">
                               {getEnvelopeName(l.envelope_id)}: {formatTaka(l.amount)}
                             </div>
                           ))}

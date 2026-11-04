@@ -184,6 +184,11 @@ export interface CreateAdjustmentRequest {
   note: string;
 }
 
+export interface EntryLineOut {
+  envelope_id: number;
+  amount: number;
+}
+
 export interface EntryOut {
   id: number;
   tenure_id: number;
@@ -197,6 +202,9 @@ export interface EntryOut {
   source: IncomeSource | null;
   member_id: number | null;
   corrected_from: number | null;
+  lines: EntryLineOut[];
+  net_effect: number;
+  size: number;
 }
 
 export interface LedgerLineOut {
@@ -387,6 +395,7 @@ export interface WhoHasWhatOut {
   member_id: number;
   member_name: string;
   quantity: number;
+  borrowed_date?: string;
 }
 
 export interface AssetActivityOut {
@@ -415,6 +424,7 @@ export interface AssetEventOut {
   quantity: number;
   occurred_on: string;
   note: string;
+  ledger_transaction_id?: number | null;
 }
 
 export interface FixEventRequest {
@@ -431,6 +441,7 @@ export interface FixEventOut {
   occurred_on: string;
   note: string;
   reversal_id: number;
+  ledger_transaction_id?: number | null;
 }
 
 export interface CostCenterSummaryOut {
@@ -923,7 +934,26 @@ export const backendApi = {
 
   async getLedgerLines(tenureId?: number): Promise<LedgerLineOut[]> {
     const qs = tenureId ? `?tenure_id=${tenureId}` : '';
-    return request<LedgerLineOut[]>(`/api/v1/ledger-lines${qs}`);
+    try {
+      const entries = await this.getEntries(tenureId);
+      const lines: LedgerLineOut[] = [];
+      let lineId = 1;
+      for (const entry of entries) {
+        if (entry.lines) {
+          for (const line of entry.lines) {
+            lines.push({
+              id: lineId++,
+              transaction_id: entry.id,
+              envelope_id: line.envelope_id,
+              amount: line.amount,
+            });
+          }
+        }
+      }
+      return lines;
+    } catch {
+      return request<LedgerLineOut[]>(`/api/v1/ledger-lines${qs}`);
+    }
   },
 
   async recordDeposit(data: DepositRequest): Promise<EntryCreated> {
@@ -1085,16 +1115,38 @@ export const backendApi = {
   },
 
   async recordAssetEvent(assetId: number, data: AssetEventRequest): Promise<AssetEventOut> {
+    const payload: Record<string, any> = {
+      kind: data.kind,
+      quantity: data.quantity,
+      occurred_on: data.occurred_on,
+      note: data.note ?? '',
+    };
+    if (['lent', 'returned', 'damaged', 'lost'].includes(data.kind) && data.member_id != null) {
+      payload.member_id = data.member_id;
+    }
+    if (data.kind === 'acquired') {
+      if (data.source != null) {
+        payload.source = data.source;
+      }
+      if (data.ledger_transaction_id != null) {
+        payload.ledger_transaction_id = data.ledger_transaction_id;
+      }
+    }
     return request<AssetEventOut>(`/api/v1/assets/${assetId}/events`, {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     });
   },
 
   async fixAssetEvent(assetId: number, eventId: number, data: FixEventRequest): Promise<FixEventOut> {
+    const payload = {
+      quantity: data.quantity,
+      occurred_on: data.occurred_on,
+      note: data.note ?? '',
+    };
     return request<FixEventOut>(`/api/v1/assets/${assetId}/events/${eventId}/fix`, {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     });
   },
 

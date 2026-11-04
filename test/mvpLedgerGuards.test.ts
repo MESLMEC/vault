@@ -156,4 +156,13 @@ describe('MVP Ledger Guards & UI Preflight Checks', () => {
     const str = toLocalDateStr(d);
     assert.strictEqual(str, '2026-11-03');
   });
+
+  it('populates borrowed_date on member asset holdings', () => {
+    const engine = new FinanceEngine(getTestSeedData());
+    const holdings = engine.getAssetHoldings();
+    assert(holdings.length > 0, 'Seed data should have asset holdings');
+    const holding = holdings[0];
+    assert(holding.borrowed_date, 'Holding should carry borrowed_date');
+    assert.match(holding.borrowed_date, /^\d{4}-\d{2}-\d{2}$/, 'borrowed_date should be formatted as YYYY-MM-DD');
+  });
 });
