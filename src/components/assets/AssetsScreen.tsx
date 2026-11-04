@@ -21,9 +21,10 @@ import {
   Member,
   AssetEventKind,
   AcquireSource,
+  LedgerEntryView,
 } from '../../lib/db/types';
 import { api } from '../../services/api';
-import { formatDate } from '../../lib/utils';
+import { formatDate, formatTaka } from '../../lib/utils';
 
 interface AssetsScreenProps {
   onRefresh: () => void;
@@ -48,6 +49,9 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
   const [actionQuantity, setActionQuantity] = useState('1');
   const [actionMemberId, setActionMemberId] = useState('');
   const [actionSource, setActionSource] = useState<AcquireSource>('purchase');
+  const [actionLedgerTxId, setActionLedgerTxId] = useState('');
+  const [manualTxId, setManualTxId] = useState(false);
+  const [expenseEntries, setExpenseEntries] = useState<LedgerEntryView[]>([]);
   const [actionNote, setActionNote] = useState('');
   const [actionDate, setActionDate] = useState(new Date().toISOString().split('T')[0]);
 
@@ -63,18 +67,20 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
 
   const loadData = async () => {
     try {
-      const [ast, st, hld, queue, mems] = await Promise.all([
+      const [ast, st, hld, queue, mems, entries] = await Promise.all([
         api.getAssets(),
         api.getAssetState(),
         api.getAssetHoldings(),
         api.getAdminReplacementQueue(),
         api.getMembers(),
+        api.getEntriesCurrent().catch(() => []),
       ]);
       setAssets(ast);
       setAssetStates(st);
       setHoldings(hld);
       setAdminQueue(queue);
       setMembers(mems);
+      setExpenseEntries(entries.filter((e) => e.kind === 'expense' && !e.is_voided));
     } catch (e) {
       console.error(e);
     }
@@ -130,18 +136,29 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
       onError(new Error('A note explaining the reason is required for this action.'));
       return;
     }
+    if (actionKind === 'acquired' && actionSource === 'purchase') {
+      const txId = parseInt(actionLedgerTxId, 10);
+      if (isNaN(txId) || txId <= 0) {
+        onError(new Error('A purchase acquisition must name the ledger expense transaction that paid for it.'));
+        return;
+      }
+    }
 
     setIsRecordingEvent(true);
     try {
       const mId = actionMemberId ? parseInt(actionMemberId, 10) : null;
+      const ledgerTxId = (actionKind === 'acquired' && actionSource === 'purchase' && actionLedgerTxId)
+        ? parseInt(actionLedgerTxId, 10)
+        : null;
 
       await api.recordAssetEvent({
         asset_id: actionAsset.asset_id,
         kind: actionKind,
         quantity: actionAsset.mode === 'individual' ? 1 : qty,
         occurred_on: actionDate,
-        member_id: ['lent', 'returned'].includes(actionKind) ? mId : null,
+        member_id: ['lent', 'returned', 'damaged', 'lost'].includes(actionKind) ? mId : null,
         source: actionKind === 'acquired' ? actionSource : null,
+        ledger_transaction_id: ledgerTxId,
         note: actionNote.trim(),
       });
 
@@ -309,6 +326,8 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
                               setActionKind('acquired');
                               setActionQuantity('1');
                               setActionSource(a.ownership === 'admin' ? 'admin' : 'purchase');
+                              setActionLedgerTxId('');
+                              setManualTxId(false);
                               setActionNote('');
                             }}
                             className="rounded border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/60 dark:bg-emerald-950/30 px-2 py-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/40"
@@ -547,6 +566,54 @@ export const AssetsScreen: React.FC<AssetsScreenProps> = ({
                     <option value="replacement">Warranty / Vendor Replacement</option>
                     <option value="other">Other</option>
                   </select>
+                </div>
+              )}
+
+              {actionKind === 'acquired' && actionSource === 'purchase' && (
+                <div>
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                      Paying Expense Transaction <span className="text-rose-500">*</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setManualTxId(!manualTxId)}
+                      className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline"
+                    >
+                      {manualTxId ? 'Select from list' : 'Enter ID manually'}
+                    </button>
+                  </div>
+                  {manualTxId || expenseEntries.length === 0 ? (
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      placeholder="e.g. 10 (Expense Transaction ID)"
+                      value={actionLedgerTxId}
+                      onChange={(e) => setActionLedgerTxId(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800 px-3 py-2 text-sm font-mono text-zinc-900 dark:text-zinc-100 outline-none"
+                    />
+                  ) : (
+                    <select
+                      required
+                      value={actionLedgerTxId}
+                      onChange={(e) => setActionLedgerTxId(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 outline-none"
+                    >
+                      <option value="">Select ledger expense payment...</option>
+                      {expenseEntries.map((tx) => {
+                        const amt = tx.size || Math.abs((tx.lines || []).reduce((s, l) => s + l.amount, 0));
+                        return (
+                          <option key={tx.id} value={tx.id}>
+                            #{tx.id} • {formatDate(tx.occurred_on)} • {formatTaka(amt)} {tx.note ? `— ${tx.note}` : ''}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  )}
+                  <p className="text-[10px] text-zinc-400 mt-0.5">
+                    Purchases must link to the ledger expense that bought the equipment (required by PostgreSQL).
+                  </p>
                 </div>
               )}
 

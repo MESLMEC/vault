@@ -423,6 +423,7 @@ export interface AssetEventOut {
   quantity: number;
   occurred_on: string;
   note: string;
+  ledger_transaction_id?: number | null;
 }
 
 export interface FixEventRequest {
@@ -439,6 +440,7 @@ export interface FixEventOut {
   occurred_on: string;
   note: string;
   reversal_id: number;
+  ledger_transaction_id?: number | null;
 }
 
 export interface CostCenterSummaryOut {
@@ -1112,16 +1114,38 @@ export const backendApi = {
   },
 
   async recordAssetEvent(assetId: number, data: AssetEventRequest): Promise<AssetEventOut> {
+    const payload: Record<string, any> = {
+      kind: data.kind,
+      quantity: data.quantity,
+      occurred_on: data.occurred_on,
+      note: data.note ?? '',
+    };
+    if (['lent', 'returned', 'damaged', 'lost'].includes(data.kind) && data.member_id != null) {
+      payload.member_id = data.member_id;
+    }
+    if (data.kind === 'acquired') {
+      if (data.source != null) {
+        payload.source = data.source;
+      }
+      if (data.ledger_transaction_id != null) {
+        payload.ledger_transaction_id = data.ledger_transaction_id;
+      }
+    }
     return request<AssetEventOut>(`/api/v1/assets/${assetId}/events`, {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     });
   },
 
   async fixAssetEvent(assetId: number, eventId: number, data: FixEventRequest): Promise<FixEventOut> {
+    const payload = {
+      quantity: data.quantity,
+      occurred_on: data.occurred_on,
+      note: data.note ?? '',
+    };
     return request<FixEventOut>(`/api/v1/assets/${assetId}/events/${eventId}/fix`, {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     });
   },
 

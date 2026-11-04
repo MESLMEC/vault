@@ -288,7 +288,7 @@ describe('Backend API Client Contract Tests', () => {
     assert.strictEqual(result.id, 15);
   });
 
-  it('POST /api/v1/assets/{id}/events sends schema-compliant fields', async () => {
+  it('POST /api/v1/assets/{id}/events sends schema-compliant fields including ledger_transaction_id for purchases', async () => {
     mockResponse = {
       status: 201,
       ok: true,
@@ -299,6 +299,7 @@ describe('Backend API Client Contract Tests', () => {
         quantity: 5,
         occurred_on: '2026-11-04',
         note: 'New batch',
+        ledger_transaction_id: 10,
       },
     };
 
@@ -308,6 +309,7 @@ describe('Backend API Client Contract Tests', () => {
       occurred_on: '2026-11-04',
       note: 'New batch',
       source: 'purchase',
+      ledger_transaction_id: 10,
     });
 
     assert.strictEqual(lastFetch?.url, '/api/v1/assets/15/events');
@@ -317,9 +319,39 @@ describe('Backend API Client Contract Tests', () => {
     assert.strictEqual(body.quantity, 5);
     assert.strictEqual(body.occurred_on, '2026-11-04');
     assert.strictEqual(body.source, 'purchase');
+    assert.strictEqual(body.ledger_transaction_id, 10);
     assert.strictEqual(body.note, 'New batch');
     assert.strictEqual('cost_center_id' in body, false);
     assert.strictEqual('recorded_by' in body, false);
+  });
+
+  it('POST /api/v1/assets/{id}/events/{event_id}/fix returns FixEventOut with ledger_transaction_id', async () => {
+    mockResponse = {
+      status: 201,
+      ok: true,
+      body: {
+        id: 102,
+        asset_id: 15,
+        kind: 'acquired',
+        quantity: 4,
+        occurred_on: '2026-11-04',
+        note: 'Original note',
+        reversal_id: 103,
+        ledger_transaction_id: 10,
+      },
+    };
+
+    const fixOut = await backendApi.fixAssetEvent(15, 101, {
+      quantity: 4,
+      occurred_on: '2026-11-04',
+      note: 'Count correction',
+    });
+
+    assert.strictEqual(lastFetch?.url, '/api/v1/assets/15/events/101/fix');
+    assert.strictEqual(lastFetch?.options?.method, 'POST');
+    assert.strictEqual(fixOut.id, 102);
+    assert.strictEqual(fixOut.reversal_id, 103);
+    assert.strictEqual(fixOut.ledger_transaction_id, 10);
   });
 
   it('GET /api/v1/entries receives entry lines, net_effect, and size (issue #5)', async () => {

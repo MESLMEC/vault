@@ -1428,6 +1428,29 @@ export class FinanceEngine {
       throw new RefusalError('Lending and returning must specify a member.');
     }
 
+    if (!['lent', 'returned', 'damaged', 'lost'].includes(params.kind) && params.member_id != null) {
+      throw new RefusalError(`A ${params.kind} event cannot name a member.`);
+    }
+
+    if (params.kind === 'acquired' && !params.source) {
+      throw new RefusalError('A source is required for acquired events.');
+    }
+
+    if (params.kind !== 'acquired' && params.source) {
+      throw new RefusalError('A source cannot be specified for non-acquired events.');
+    }
+
+    if (params.kind === 'acquired' && params.source === 'purchase' && !params.ledger_transaction_id) {
+      throw new RefusalError(
+        'A purchase acquisition must name the ledger expense that paid for it.',
+        'Record the expense in the ledger first, then select it as the paying transaction.'
+      );
+    }
+
+    if (params.kind !== 'acquired' && params.ledger_transaction_id) {
+      throw new RefusalError('A ledger transaction link is only valid for acquired events.');
+    }
+
     if (params.kind === 'lent') {
       // Check if borrower is currently a member
       const periods = this.state.membership_periods.filter((p) => p.member_id === params.member_id);
@@ -1500,6 +1523,45 @@ export class FinanceEngine {
     this.state.asset_events.push(ev);
     this.notify();
     return ev;
+  }
+
+  public getAssetActivity(fromDate: string, toDate: string): Array<{
+    asset_name: string;
+    ownership: string;
+    kind: string;
+    source: string | null;
+    units: number;
+    events: number;
+  }> {
+    if (fromDate > toDate) return [];
+    const reversedIds = new Set(
+      this.state.asset_events.filter((e) => e.reverses_id !== null).map((e) => e.reverses_id)
+    );
+    const currentEvents = this.state.asset_events.filter(
+      (e) => e.reverses_id === null && !reversedIds.has(e.id)
+    );
+    const assetMap = new Map(this.state.assets.map((a) => [a.id, a]));
+    const groups = new Map<string, { asset_name: string; ownership: string; kind: string; source: string | null; units: number; events: number }>();
+
+    for (const ev of currentEvents) {
+      if (ev.occurred_on >= fromDate && ev.occurred_on <= toDate) {
+        const asset = assetMap.get(ev.asset_id);
+        if (!asset) continue;
+        const key = `${asset.name}::${asset.ownership}::${ev.kind}::${ev.source || ''}`;
+        const existing = groups.get(key) || {
+          asset_name: asset.name,
+          ownership: asset.ownership,
+          kind: ev.kind,
+          source: ev.source,
+          units: 0,
+          events: 0,
+        };
+        existing.units += ev.quantity;
+        existing.events += 1;
+        groups.set(key, existing);
+      }
+    }
+    return Array.from(groups.values()).sort((a, b) => a.asset_name.localeCompare(b.asset_name));
   }
 
   // =====================================================================================

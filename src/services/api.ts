@@ -48,6 +48,7 @@ import {
   AssetStateOut,
   WhoHasWhatOut,
   AssetActivityOut,
+  AssetEventRequest,
   CostCenterSummaryOut,
   ReconciliationStatusOut,
   UnverifiedEntryOut,
@@ -1470,18 +1471,36 @@ export const api = {
     source?: AcquireSource | null;
     ledger_transaction_id?: number | null;
   }): Promise<AssetEvent> {
+    if (params.kind === 'acquired' && params.source === 'purchase' && !params.ledger_transaction_id) {
+      throw new Error('A purchase acquisition must name the expense transaction that paid for it.');
+    }
     if (this.isBackendMode() && authStorage.getToken()) {
       try {
-        await backendApi.recordAssetEvent(params.asset_id, {
+        const payload: AssetEventRequest = {
           kind: params.kind,
           quantity: params.quantity,
           occurred_on: params.occurred_on,
-          note: params.note,
-          member_id: params.member_id,
-          source: params.source,
-          ledger_transaction_id: params.ledger_transaction_id,
+          note: params.note || '',
+        };
+        if (['lent', 'returned', 'damaged', 'lost'].includes(params.kind) && params.member_id) {
+          payload.member_id = params.member_id;
+        }
+        if (params.kind === 'acquired') {
+          payload.source = params.source ?? 'other';
+          if (params.source === 'purchase' && params.ledger_transaction_id) {
+            payload.ledger_transaction_id = params.ledger_transaction_id;
+          }
+        }
+        const eventOut = await backendApi.recordAssetEvent(params.asset_id, payload);
+        const engineEvent = getEngine().recordAssetEvent({
+          ...params,
+          ledger_transaction_id: eventOut.ledger_transaction_id ?? params.ledger_transaction_id,
         });
-        return getEngine().recordAssetEvent(params);
+        return {
+          ...engineEvent,
+          id: eventOut.id || engineEvent.id,
+          ledger_transaction_id: eventOut.ledger_transaction_id ?? engineEvent.ledger_transaction_id,
+        };
       } catch (err) {
         if (authStorage.getMode() === 'backend') throw err;
         console.warn('Backend recordAssetEvent failed:', err);
@@ -1524,7 +1543,7 @@ export const api = {
         console.warn('Backend getAssetActivity failed:', err);
       }
     }
-    return [];
+    return getEngine().getAssetActivity(fromDate, toDate);
   },
 
   // -----------------------------------------------------------------------------------
