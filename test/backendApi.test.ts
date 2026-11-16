@@ -1,4 +1,4 @@
-import { describe, it, beforeEach } from 'node:test';
+import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 import { backendApi, authStorage } from '../src/services/backendApi';
 
@@ -23,9 +23,39 @@ let mockResponse: { status: number; ok: boolean; body: any } = {
 describe('Backend API Client Contract Tests', () => {
   beforeEach(() => {
     lastFetch = null;
+    delete process.env.VITE_API_URL;
+    delete process.env.VITE_BACKEND_URL;
     authStorage.clearToken();
     authStorage.setBaseUrl('');
     mockResponse = { status: 200, ok: true, body: {} };
+  });
+
+  afterEach(() => {
+    delete process.env.VITE_API_URL;
+    delete process.env.VITE_BACKEND_URL;
+    authStorage.setBaseUrl('');
+  });
+
+  it('resolves API base URL from VITE_API_URL env variable and strips trailing slash', async () => {
+    process.env.VITE_API_URL = 'https://api.mesl.internal/';
+    assert.strictEqual(authStorage.getBaseUrl(), 'https://api.mesl.internal');
+
+    mockResponse = { status: 200, ok: true, body: [] };
+    await backendApi.getEnvelopes();
+    assert.strictEqual(lastFetch?.url, 'https://api.mesl.internal/api/v1/envelopes');
+  });
+
+  it('supports VITE_BACKEND_URL fallback and manual setBaseUrl override', async () => {
+    process.env.VITE_BACKEND_URL = 'https://backend.example.com';
+    assert.strictEqual(authStorage.getBaseUrl(), 'https://backend.example.com');
+
+    // Manual override takes precedence
+    authStorage.setBaseUrl('https://override.example.com/');
+    assert.strictEqual(authStorage.getBaseUrl(), 'https://override.example.com');
+
+    // Clearing manual override reverts to env var
+    authStorage.setBaseUrl('');
+    assert.strictEqual(authStorage.getBaseUrl(), 'https://backend.example.com');
   });
 
   it('authenticates via POST /api/v1/auth/login and stores bearer token', async () => {
