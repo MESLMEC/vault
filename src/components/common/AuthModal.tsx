@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Key, Server, CheckCircle2, AlertCircle, LogOut } from 'lucide-react';
+import { ShieldCheck, Key, Server, CheckCircle2, AlertCircle, LogOut, Globe } from 'lucide-react';
 import { api } from '../../services/api';
 import { authStorage } from '../../services/backendApi';
 import { Login } from '../ui/Login';
@@ -96,13 +96,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </span>
             {backendHealth.online ? (
               <span className="inline-flex items-center gap-1 font-semibold text-emerald-600 dark:text-emerald-400">
-                <CheckCircle2 className="h-3.5 w-3.5" /> Online (:8000)
+                <CheckCircle2 className="h-3.5 w-3.5" /> Online
               </span>
             ) : (
               <span className="inline-flex items-center gap-1 font-semibold text-amber-600 dark:text-amber-400">
                 <AlertCircle className="h-3.5 w-3.5" /> Offline / Standalone
               </span>
             )}
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-1.5 font-medium text-zinc-600 dark:text-zinc-400">
+              <Globe className="h-4 w-4" /> API Endpoint:
+            </span>
+            <span
+              className="font-mono text-[11px] text-zinc-600 dark:text-zinc-400 truncate max-w-[210px]"
+              title={authStorage.getBaseUrl() || 'Relative path (Vite proxy / same origin)'}
+            >
+              {authStorage.getBaseUrl() || 'Relative (/api)'}
+            </span>
           </div>
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1.5 font-medium text-zinc-600 dark:text-zinc-400">

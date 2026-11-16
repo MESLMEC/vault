@@ -1,0 +1,4 @@
+# Netlify Single Page Application (SPA) routing rule
+# Ensures client-side routing and page refreshes work properly.
+/*    /index.html   200
+

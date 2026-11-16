@@ -611,6 +611,30 @@ function safeRemove(key: string): void {
   memoryStore.delete(key);
 }
 
+/**
+ * Resolves the configured API base URL from environment variables (VITE_API_URL or VITE_BACKEND_URL).
+ * Safely guards against non-browser/non-Vite environments (e.g. Node.js unit tests).
+ */
+export function getEnvApiUrl(): string {
+  try {
+    if (typeof import.meta !== 'undefined' && import.meta.env) {
+      const val = import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL;
+      if (typeof val === 'string' && val.trim()) {
+        return val.trim().replace(/\/+$/, '');
+      }
+    }
+  } catch {}
+  try {
+    if (typeof process !== 'undefined' && process.env) {
+      const val = process.env.VITE_API_URL || process.env.VITE_BACKEND_URL;
+      if (typeof val === 'string' && val.trim()) {
+        return val.trim().replace(/\/+$/, '');
+      }
+    }
+  } catch {}
+  return '';
+}
+
 export const authStorage = {
   getToken(): string | null {
     return safeGet(TOKEN_KEY);
@@ -634,10 +658,21 @@ export const authStorage = {
     safeSet(MODE_KEY, mode);
   },
   getBaseUrl(): string {
-    return safeGet(API_URL_KEY) || '';
+    const custom = safeGet(API_URL_KEY);
+    if (custom && custom.trim()) {
+      return custom.trim().replace(/\/+$/, '');
+    }
+    return getEnvApiUrl();
   },
   setBaseUrl(url: string): void {
-    safeSet(API_URL_KEY, url);
+    if (url && url.trim()) {
+      safeSet(API_URL_KEY, url.trim().replace(/\/+$/, ''));
+    } else {
+      safeRemove(API_URL_KEY);
+    }
+  },
+  getDefaultBaseUrl(): string {
+    return getEnvApiUrl();
   },
 };
 
@@ -674,7 +709,9 @@ async function request<T>(
       `Cannot connect to MESL Finance backend at ${url}. ${netErr.message || ''}`
     ) as ApiRefusalError;
     error.reason = `Backend server is unreachable (${netErr.message || 'Network error'}).`;
-    error.remediation = 'Ensure the FastAPI backend is running (e.g. at http://localhost:8000) or switch to Local Simulation Mode.';
+    error.remediation = baseUrl
+      ? `Ensure the FastAPI backend at ${baseUrl} is running and reachable (verify CORS and network), or switch to Local Simulation Mode.`
+      : 'Ensure the FastAPI backend is running (e.g. at http://localhost:8000) or switch to Local Simulation Mode.';
     error.raw = netErr;
     throw error;
   }

@@ -140,6 +140,15 @@ export const api = {
     setMode(mode: 'auto' | 'backend' | 'engine'): void {
       authStorage.setMode(mode);
     },
+    getBaseUrl(): string {
+      return authStorage.getBaseUrl();
+    },
+    setBaseUrl(url: string): void {
+      authStorage.setBaseUrl(url);
+    },
+    getDefaultBaseUrl(): string {
+      return authStorage.getDefaultBaseUrl();
+    },
     async checkBackendHealth() {
       return await backendApi.probeHealth();
     },
