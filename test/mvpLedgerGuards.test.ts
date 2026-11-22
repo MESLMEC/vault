@@ -138,6 +138,32 @@ describe('MVP Ledger Guards & UI Preflight Checks', () => {
     assert.strictEqual(updatedPool.balance, initialPoolBal - 350);
   });
 
+  it('records deposit into unallocated pool when no other envelopes exist', () => {
+    const data = getTestSeedData();
+    data.envelopes = data.envelopes.filter((e) => e.is_pool);
+    const engine = new FinanceEngine(data);
+    const pool = engine.getPoolEnvelope();
+    const initialPoolBal = engine.getEnvelopeBalances().find((b) => b.id === pool.id)!.balance;
+
+    const depositTx = engine.recordTransaction({
+      kind: 'deposit',
+      occurred_on: '2026-10-20',
+      recorded_by: 'Treasurer',
+      source: 'admin_grant',
+      note: 'Admin grant without custom envelopes',
+      lines: [{ envelope_id: pool.id, amount: 5000 }],
+    });
+
+    assert.strictEqual(depositTx.kind, 'deposit');
+    const entry = engine.getEntriesCurrent().find((e) => e.id === depositTx.id);
+    assert(entry);
+    assert.strictEqual(entry.lines[0].envelope_id, pool.id);
+    assert.strictEqual(entry.lines[0].amount, 5000);
+
+    const updatedPool = engine.getEnvelopeBalances().find((b) => b.id === pool.id)!;
+    assert.strictEqual(updatedPool.balance, initialPoolBal + 5000);
+  });
+
   it('formats compact Taka without rounding small amounts to ৳0k', () => {
     assert.strictEqual(formatCompactTaka(0), '৳0');
     assert.strictEqual(formatCompactTaka(null), '৳0');

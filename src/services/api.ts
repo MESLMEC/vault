@@ -1108,11 +1108,54 @@ export const api = {
             note: params.note || 'Envelope transfer',
           });
         }
-        // Mirror to local engine
-        const tx = getEngine().recordTransaction(params);
-        if (serverResult?.id) tx.id = serverResult.id;
-        (tx as any).serverResult = serverResult;
-        return tx;
+        // Mirror to local engine safely without letting local engine state mismatch mask backend success
+        try {
+          // If envelope missing locally, register it in local engine
+          const lineEnvId = params.lines[0]?.envelope_id;
+          if (lineEnvId && !getEngine().getEnvelopes().some((e) => e.id === lineEnvId)) {
+            const beEnvs = await backendApi.getEnvelopes().catch(() => []);
+            const matchingBeEnv = beEnvs.find((e) => e.id === lineEnvId);
+            if (matchingBeEnv) {
+              (getEngine() as any).state.envelopes.push({
+                id: matchingBeEnv.id,
+                name: matchingBeEnv.name,
+                target_cap: matchingBeEnv.target_cap,
+                alloc_priority: matchingBeEnv.alloc_priority,
+                is_pool: matchingBeEnv.is_pool,
+                active: matchingBeEnv.active,
+              });
+            }
+          }
+          const tx = getEngine().recordTransaction(params);
+          if (serverResult?.id) tx.id = serverResult.id;
+          (tx as any).serverResult = serverResult;
+          return tx;
+        } catch (mirrorErr) {
+          console.debug('Local engine mirror skipped after successful backend commit:', mirrorErr);
+          const synthTx: LedgerTransaction & { serverResult?: any } = {
+            id: serverResult?.id || Date.now(),
+            tenure_id: 1,
+            kind: params.kind,
+            occurred_on: params.occurred_on,
+            recorded_at: new Date().toISOString(),
+            recorded_by: params.recorded_by,
+            note: params.note || '',
+            tag: params.tag || null,
+            cost_center_id: params.cost_center_id || null,
+            source: params.source || null,
+            member_id: params.member_id || null,
+            reverses_id: null,
+            replaces_id: null,
+            serverResult,
+          };
+          (synthTx as any).lines = params.lines.map((l, idx) => ({
+            id: (serverResult?.id || Date.now()) * 1000 + idx + 1,
+            transaction_id: serverResult?.id || 1,
+            envelope_id: l.envelope_id || 1,
+            amount: l.amount,
+          }));
+          return synthTx;
+        }
       } catch (err) {
         if (authStorage.getMode() === 'backend') throw err;
         console.warn('Backend recordTransaction failed, falling back:', err);
@@ -1144,20 +1187,42 @@ export const api = {
           note: params.note || '',
         });
         const pool = getEngine().getEnvelopes().find((e) => e.is_pool);
-        const tx = getEngine().recordTransaction({
-          kind: 'expense',
-          occurred_on: params.occurred_on,
-          recorded_by: params.recorded_by || 'Treasurer',
-          note: params.note || `Fee credit refund to member #${params.member_id}`,
-          tag: params.tag || null,
-          cost_center_id: params.cost_center_id || null,
-          source: null,
-          member_id: params.member_id,
-          lines: [{ envelope_id: pool?.id || 1, amount: -Math.abs(params.amount) }],
-        });
-        if (serverResult?.id) tx.id = serverResult.id;
-        (tx as any).serverResult = serverResult;
-        return tx;
+        try {
+          const tx = getEngine().recordTransaction({
+            kind: 'expense',
+            occurred_on: params.occurred_on,
+            recorded_by: params.recorded_by || 'Treasurer',
+            note: params.note || `Fee credit refund to member #${params.member_id}`,
+            tag: params.tag || null,
+            cost_center_id: params.cost_center_id || null,
+            source: null,
+            member_id: params.member_id,
+            lines: [{ envelope_id: pool?.id || 1, amount: -Math.abs(params.amount) }],
+          });
+          if (serverResult?.id) tx.id = serverResult.id;
+          (tx as any).serverResult = serverResult;
+          return tx;
+        } catch (mirrorErr) {
+          console.debug('Local engine mirror skipped for refund:', mirrorErr);
+          const synthTx: LedgerTransaction & { serverResult?: any } = {
+            id: serverResult?.id || Date.now(),
+            tenure_id: 1,
+            kind: 'expense',
+            occurred_on: params.occurred_on,
+            recorded_at: new Date().toISOString(),
+            recorded_by: params.recorded_by || 'Treasurer',
+            note: params.note || `Fee credit refund to member #${params.member_id}`,
+            tag: params.tag || null,
+            cost_center_id: params.cost_center_id || null,
+            source: null,
+            member_id: params.member_id,
+            reverses_id: null,
+            replaces_id: null,
+            serverResult,
+          };
+          (synthTx as any).lines = [{ id: 1, transaction_id: serverResult?.id || 1, envelope_id: pool?.id || 1, amount: -Math.abs(params.amount) }];
+          return synthTx;
+        }
       } catch (err) {
         if (authStorage.getMode() === 'backend') throw err;
         console.warn('Backend recordRefund failed:', err);
