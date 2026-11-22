@@ -41,7 +41,7 @@ export const DuesOverviewTable: React.FC<DuesOverviewTableProps> = ({
   onRefresh,
   onError,
 }) => {
-  const [filter, setFilter] = useState<'all' | 'arrears' | 'settled' | 'credit'>('all');
+  const [filter, setFilter] = useState<'all' | 'active' | 'arrears' | 'settled' | 'credit'>('all');
   const [search, setSearch] = useState('');
   const [asOfDate, setAsOfDate] = useState(new Date().toISOString().split('T')[0]);
 
@@ -83,9 +83,14 @@ export const DuesOverviewTable: React.FC<DuesOverviewTableProps> = ({
     }
   };
 
+  const countActive = standing.filter((s) => s.is_member_now).length;
+  const countSettled = standing.filter((s) => s.balance === 0).length;
+  const countCredit = standing.filter((s) => s.balance > 0).length;
+
   const filtered = standing.filter((s) => {
     const matchesSearch = s.who_name.toLowerCase().includes(search.toLowerCase());
     if (!matchesSearch) return false;
+    if (filter === 'active') return Boolean(s.is_member_now);
     if (filter === 'arrears') return s.balance < 0;
     if (filter === 'settled') return s.balance === 0;
     if (filter === 'credit') return s.balance > 0;
@@ -270,10 +275,11 @@ export const DuesOverviewTable: React.FC<DuesOverviewTableProps> = ({
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
         <div className="flex items-center gap-2">
           {/* Status Tabs */}
-          <div className="flex rounded-lg bg-zinc-100 dark:bg-zinc-800 p-1 text-xs font-medium">
+          <div className="flex flex-wrap items-center rounded-lg bg-zinc-100 dark:bg-zinc-800 p-1 text-xs font-medium gap-1">
             <button
+              type="button"
               onClick={() => setFilter('all')}
-              className={`px-3 py-1 rounded-md transition-all ${
+              className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
                 filter === 'all'
                   ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-sm'
                   : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'
@@ -282,8 +288,21 @@ export const DuesOverviewTable: React.FC<DuesOverviewTableProps> = ({
               All ({standing.length})
             </button>
             <button
+              type="button"
+              onClick={() => setFilter('active')}
+              title="Members with currently active membership periods"
+              className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
+                filter === 'active'
+                  ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-sm font-semibold'
+                  : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'
+              }`}
+            >
+              Currently Active ({countActive})
+            </button>
+            <button
+              type="button"
               onClick={() => setFilter('arrears')}
-              className={`px-3 py-1 rounded-md transition-all ${
+              className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
                 filter === 'arrears'
                   ? 'bg-white dark:bg-zinc-900 text-red-600 dark:text-red-400 shadow-sm font-semibold'
                   : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'
@@ -292,24 +311,26 @@ export const DuesOverviewTable: React.FC<DuesOverviewTableProps> = ({
               In Arrears ({countOverdue})
             </button>
             <button
+              type="button"
               onClick={() => setFilter('credit')}
-              className={`px-3 py-1 rounded-md transition-all ${
+              className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
                 filter === 'credit'
                   ? 'bg-white dark:bg-zinc-900 text-emerald-600 dark:text-emerald-400 shadow-sm'
                   : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'
               }`}
             >
-              Credit Held
+              Credit Held ({countCredit})
             </button>
             <button
+              type="button"
               onClick={() => setFilter('settled')}
-              className={`px-3 py-1 rounded-md transition-all ${
+              className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
                 filter === 'settled'
                   ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-sm'
                   : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'
               }`}
             >
-              Settled
+              Settled ({countSettled})
             </button>
           </div>
         </div>
@@ -362,8 +383,20 @@ export const DuesOverviewTable: React.FC<DuesOverviewTableProps> = ({
                     >
                       {/* Name & Batch */}
                       <td className="py-3 px-4">
-                        <div className="font-semibold text-zinc-900 dark:text-zinc-100">
-                          {s.who_name}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-semibold text-zinc-900 dark:text-zinc-100">
+                            {s.who_name}
+                          </span>
+                          {s.is_member_now ? (
+                            <span className="inline-flex items-center gap-1 rounded bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.2 text-[10px] font-medium text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/40">
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                              Active
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center rounded bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.2 text-[10px] font-medium text-zinc-500 border border-zinc-200 dark:border-zinc-700">
+                              Inactive
+                            </span>
+                          )}
                         </div>
                         <div className="text-[11px] text-zinc-500">
                           {m?.batch ? `Batch ${m.batch}` : 'Member'}

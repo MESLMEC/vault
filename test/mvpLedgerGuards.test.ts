@@ -191,4 +191,21 @@ describe('MVP Ledger Guards & UI Preflight Checks', () => {
     assert(holding.borrowed_date, 'Holding should carry borrowed_date');
     assert.match(holding.borrowed_date, /^\d{4}-\d{2}-\d{2}$/, 'borrowed_date should be formatted as YYYY-MM-DD');
   });
+
+  it('correctly filters currently active members', () => {
+    const engine = new FinanceEngine(getTestSeedData());
+    const standing = engine.getDuesOverview('2026-10-25');
+    assert(standing.length > 0);
+
+    const activeMembers = standing.filter((s) => Boolean(s.is_member_now));
+    const settled = standing.filter((s) => s.balance === 0);
+
+    assert(activeMembers.length > 0);
+    for (const member of activeMembers) {
+      assert.strictEqual(member.is_member_now, true);
+    }
+    for (const member of settled) {
+      assert.strictEqual(member.balance, 0);
+    }
+  });
 });
