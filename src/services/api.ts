@@ -1050,6 +1050,7 @@ export const api = {
     source?: IncomeSource | null;
     member_id?: number | null;
     lines: Array<{ envelope_id: number; amount: number }>;
+    idempotency_key?: string;
   }): Promise<LedgerTransaction & { serverResult?: any }> {
     if (this.isBackendMode() && authStorage.getToken()) {
       let serverResult: any = undefined;
@@ -1079,7 +1080,11 @@ export const api = {
               depositData.envelope_id = line.envelope_id;
             }
           }
-          serverResult = await backendApi.recordDeposit(depositData);
+          const key = params.idempotency_key || (params as any).idempotencyKey;
+          if (key) {
+            depositData.idempotency_key = key;
+          }
+          serverResult = await backendApi.recordDeposit(depositData, key);
         } else if (params.kind === 'expense') {
           const line = params.lines[0];
           serverResult = await backendApi.recordExpense({
@@ -1660,6 +1665,17 @@ export const api = {
   },
 
   async verifyAll(): Promise<string[]> {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        return await backendApi.getHealth();
+      } catch (err: any) {
+        if (err.status === 503 && Array.isArray(err.raw)) {
+          return err.raw;
+        }
+        if (authStorage.getMode() === 'backend') throw err;
+        console.warn('Backend getHealth failed, falling back to engine:', err);
+      }
+    }
     return await getEngine().verifyAll();
   },
 

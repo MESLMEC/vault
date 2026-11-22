@@ -227,6 +227,7 @@ export interface DepositRequest {
   cost_center_id?: number | null;
   member_id?: number;
   envelope_id?: number;
+  idempotency_key?: string;
 }
 
 export interface ExpenseRequest {
@@ -575,6 +576,22 @@ export interface ApiRefusalError extends Error {
 // AUTH & CONFIGURATION STORAGE
 // =====================================================================================
 
+/**
+ * Generates a standard RFC 4122 v4 UUID string suitable for Idempotency-Key headers.
+ */
+export function generateIdempotencyKey(): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+  } catch {}
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 const TOKEN_KEY = 'mesl_backend_token';
 const USERNAME_KEY = 'mesl_backend_username';
 const MODE_KEY = 'mesl_backend_mode'; // 'auto' | 'backend' | 'engine'
@@ -738,11 +755,15 @@ async function request<T>(
     }
 
     // Handle 422 Validation Error
-    if (response.status === 422 && Array.isArray(errorData?.detail)) {
-      const messages = errorData.detail
-        .map((d: any) => `${d.loc?.join('.') || 'field'}: ${d.msg}`)
-        .join('; ');
-      err.reason = `Validation failed: ${messages}`;
+    if (response.status === 422) {
+      if (Array.isArray(errorData?.detail)) {
+        const messages = errorData.detail
+          .map((d: any) => `${d.loc?.join('.') || 'field'}: ${d.msg}`)
+          .join('; ');
+        err.reason = `Validation failed: ${messages}`;
+      } else {
+        err.reason = errorData?.detail || errorData?.title || 'Validation failed';
+      }
       err.remediation = 'Please check the values entered and submit again.';
       throw err;
     }
@@ -750,7 +771,15 @@ async function request<T>(
     // Handle RFC 9457 Problem Details (409, 400, 404, etc.)
     err.reason = errorData?.detail || errorData?.title || `Backend error (${response.status})`;
     if (response.status === 409) {
-      err.remediation = 'The requested operation violates database business constraints (e.g., negative balance, duplicate name, or closed tenure).';
+      const isIdempotencyConflict =
+        errorData?.type?.includes('idempotency') ||
+        errorData?.title?.toLowerCase().includes('idempotency') ||
+        err.reason.toLowerCase().includes('idempotency');
+      if (isIdempotencyConflict) {
+        err.remediation = 'This Idempotency-Key was previously submitted with different request parameters. Replaying with identical parameters will return the original response.';
+      } else {
+        err.remediation = 'The requested operation violates database business constraints (e.g., negative balance, duplicate name, or closed tenure).';
+      }
     } else if (response.status === 404) {
       err.remediation = 'The requested entity could not be found.';
     } else {
@@ -993,7 +1022,7 @@ export const backendApi = {
     }
   },
 
-  async recordDeposit(data: DepositRequest): Promise<EntryCreated> {
+  async recordDeposit(data: DepositRequest, idempotencyKey?: string): Promise<EntryCreated> {
     if (!data.source) {
       throw new Error('source is required for deposits.');
     }
@@ -1022,8 +1051,17 @@ export const backendApi = {
         payload.envelope_id = data.envelope_id;
       }
     }
+
+    const key = (idempotencyKey || data.idempotency_key || generateIdempotencyKey()).trim();
+    if (!key) {
+      throw new Error('Idempotency-Key header must not be blank.');
+    }
+
     return request<EntryCreated>('/api/v1/deposits', {
       method: 'POST',
+      headers: {
+        'Idempotency-Key': key,
+      },
       body: JSON.stringify(payload),
     });
   },

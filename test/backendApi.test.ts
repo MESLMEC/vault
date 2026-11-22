@@ -140,6 +140,33 @@ describe('Backend API Client Contract Tests', () => {
         return true;
       }
     );
+
+    // Idempotency conflict error translation
+    mockResponse = {
+      status: 409,
+      ok: false,
+      body: {
+        title: 'Idempotency Conflict',
+        status: 409,
+        detail: 'This idempotency key was previously claimed with a different request.',
+      },
+    };
+
+    await assert.rejects(
+      async () => {
+        await backendApi.recordDeposit({
+          amount: 500,
+          occurred_on: '2026-10-26',
+          source: 'other',
+          envelope_id: 1,
+        });
+      },
+      (err: any) => {
+        assert.strictEqual(err.status, 409);
+        assert(err.remediation.includes('Idempotency-Key was previously submitted'));
+        return true;
+      }
+    );
   });
 
   it('formats query params for cost centers correctly', async () => {
@@ -227,6 +254,41 @@ describe('Backend API Client Contract Tests', () => {
     assert.strictEqual(grantBody.source, 'admin_grant');
     assert.strictEqual(grantBody.envelope_id, 2);
     assert.strictEqual(grantBody.member_id, undefined);
+
+    // Verify Idempotency-Key header is automatically generated and attached
+    const headers = lastFetch?.options?.headers as Record<string, string>;
+    assert(headers?.['Idempotency-Key']);
+    assert.strictEqual(typeof headers?.['Idempotency-Key'], 'string');
+    assert(headers?.['Idempotency-Key'].length > 0);
+
+    // Custom Idempotency-Key is respected
+    await backendApi.recordDeposit(
+      {
+        amount: 50,
+        occurred_on: '2026-10-28',
+        source: 'weekly_fee',
+        member_id: 7,
+      },
+      'custom-idempotency-key-uuid-123'
+    );
+    const customHeaders = lastFetch?.options?.headers as Record<string, string>;
+    assert.strictEqual(customHeaders?.['Idempotency-Key'], 'custom-idempotency-key-uuid-123');
+
+    // Blank Idempotency-Key is rejected
+    await assert.rejects(
+      async () => {
+        await backendApi.recordDeposit(
+          {
+            amount: 50,
+            occurred_on: '2026-10-28',
+            source: 'weekly_fee',
+            member_id: 7,
+          },
+          '   '
+        );
+      },
+      /Idempotency-Key header must not be blank/
+    );
 
     // Non-weekly fee with member_id: rejected
     await assert.rejects(

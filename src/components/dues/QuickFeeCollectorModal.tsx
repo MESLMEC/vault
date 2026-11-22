@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Users, ArrowDownRight, CheckCircle2, AlertTriangle, Share2, Loader2 } from 'lucide-react';
 import { Member, MemberStanding, LedgerEntryView } from '../../lib/db/types';
 import { api } from '../../services/api';
+import { generateIdempotencyKey } from '../../services/backendApi';
 import { formatTaka } from '../../lib/utils';
 import { FeeReceiptModal } from './FeeReceiptModal';
 import { SettleModal } from '../ui/SettleModal';
@@ -93,6 +94,7 @@ export const QuickFeeCollectorModal: React.FC<QuickFeeCollectorModalProps> = ({
         source: 'weekly_fee',
         member_id: memId,
         lines: [{ envelope_id: pool.id, amount: enteredAmount }],
+        idempotency_key: generateIdempotencyKey(),
       });
 
       const memberObj = members.find((m) => m.id === memId);

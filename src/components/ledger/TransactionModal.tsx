@@ -23,6 +23,7 @@ import {
   FileText,
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { generateIdempotencyKey } from '../../services/backendApi';
 import { EnvelopeBalance, CostCenter, Member, IncomeSource, EntryKind, LedgerEntryView } from '../../lib/db/types';
 import { formatTaka, formatDate } from '../../lib/utils';
 import { SettleModal } from '../ui/SettleModal';
@@ -88,6 +89,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
   // Idempotency & In-flight states
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionIdempotencyKey, setSubmissionIdempotencyKey] = useState<string>('');
   const [preflightErrors, setPreflightErrors] = useState<string[]>([]);
   const [preflightWarning, setPreflightWarning] = useState<string | null>(null);
 
@@ -133,6 +135,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     }
 
     setKind(initialType);
+    setSubmissionIdempotencyKey(generateIdempotencyKey());
 
     // Check for saved browser draft in localStorage
     try {
@@ -439,6 +442,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
           source,
           member_id: source === 'weekly_fee' ? memId : null,
           lines: [{ envelope_id: destEnvId, amount: amt }],
+          idempotency_key: submissionIdempotencyKey || generateIdempotencyKey(),
         });
       } else if (kind === 'expense') {
         const sourceEnvId = fromEnvId || parseInt(selectedEnvelopeId, 10) || pool?.id || 1;
