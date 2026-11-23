@@ -3,7 +3,7 @@ import { Users, ArrowDownRight, CheckCircle2, AlertTriangle, Share2, Loader2 } f
 import { Member, MemberStanding, LedgerEntryView } from '../../lib/db/types';
 import { api } from '../../services/api';
 import { generateIdempotencyKey } from '../../services/backendApi';
-import { formatTaka } from '../../lib/utils';
+import { formatTaka, cn } from '../../lib/utils';
 import { FeeReceiptModal } from './FeeReceiptModal';
 import { SettleModal } from '../ui/SettleModal';
 
@@ -29,7 +29,12 @@ export const QuickFeeCollectorModal: React.FC<QuickFeeCollectorModalProps> = ({
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [note, setNote] = useState<string>('Weekly membership dues');
   const [recordedBy, setRecordedBy] = useState('Treasurer');
-  const [error, setError] = useState<{ reason: string; remediation?: string } | null>(null);
+  const [error, setError] = useState<{
+    title?: string;
+    reason: string;
+    remediation?: string;
+    isServerError?: boolean;
+  } | null>(null);
   const [receiptTx, setReceiptTx] = useState<LedgerEntryView | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -109,9 +114,17 @@ export const QuickFeeCollectorModal: React.FC<QuickFeeCollectorModalProps> = ({
       onSuccess();
       setReceiptTx(viewTx);
     } catch (err: any) {
+      const status = err?.status;
+      const isServerError = typeof status === 'number' && status >= 500;
       setError({
+        title: err?.title || (isServerError ? `Server Error (${status})` : 'Collection Refused'),
         reason: err?.reason || err?.message || 'Failed to collect fees.',
-        remediation: err?.remediation,
+        remediation:
+          err?.remediation ||
+          (isServerError
+            ? 'The transaction was NOT recorded. Please check backend server logs and try again.'
+            : undefined),
+        isServerError,
       });
       onError(err);
     } finally {
@@ -135,14 +148,33 @@ export const QuickFeeCollectorModal: React.FC<QuickFeeCollectorModalProps> = ({
 
         {/* Error / Refusal Alert */}
         {error && (
-          <div className="mt-3 rounded-lg bg-amber-50 dark:bg-amber-950/40 p-3.5 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 space-y-1 animate-in fade-in">
-            <div className="flex items-center gap-2 font-semibold text-xs text-amber-800 dark:text-amber-300">
-              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-              <span>Action Refused</span>
+          <div
+            className={cn(
+              'mt-3 rounded-lg p-3.5 border space-y-1 animate-in fade-in',
+              error.isServerError
+                ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-900 dark:text-rose-200'
+                : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200'
+            )}
+          >
+            <div className="flex items-center gap-2 font-semibold text-xs">
+              <AlertTriangle
+                className={cn(
+                  'h-4 w-4 shrink-0',
+                  error.isServerError ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400'
+                )}
+              />
+              <span>{error.title || 'Collection Refused'}</span>
             </div>
-            <p className="text-xs leading-relaxed">{error.reason}</p>
+            <p className="text-xs leading-relaxed font-mono">{error.reason}</p>
             {error.remediation && (
-              <p className="text-[11px] text-amber-700 dark:text-amber-400 pt-1 border-t border-amber-200/50 dark:border-amber-800/50">
+              <p
+                className={cn(
+                  'text-[11px] pt-1 border-t',
+                  error.isServerError
+                    ? 'text-rose-700 dark:text-rose-300 border-rose-200/50 dark:border-rose-800/50'
+                    : 'text-amber-700 dark:text-amber-400 border-amber-200/50 dark:border-amber-800/50'
+                )}
+              >
                 <strong>How to proceed: </strong>{error.remediation}
               </p>
             )}

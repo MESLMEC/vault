@@ -1,6 +1,7 @@
 import React from 'react';
 import { AlertCircle, ArrowRight } from 'lucide-react';
 import { SettleModal } from '../ui/SettleModal';
+import { cn } from '../../lib/utils';
 
 interface RefusalModalProps {
   isOpen: boolean;
@@ -8,6 +9,7 @@ interface RefusalModalProps {
   title?: string;
   reason: string;
   remediation?: string;
+  isServerError?: boolean;
 }
 
 export const RefusalModal: React.FC<RefusalModalProps> = ({
@@ -16,20 +18,31 @@ export const RefusalModal: React.FC<RefusalModalProps> = ({
   title = 'Action Refused',
   reason,
   remediation,
+  isServerError,
 }) => {
   return (
     <SettleModal
       open={isOpen}
       onClose={onClose}
       size="md"
+      zIndex={70}
       title={
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400">
+          <div
+            className={cn(
+              'flex h-10 w-10 shrink-0 items-center justify-center rounded-full',
+              isServerError
+                ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
+                : 'bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400'
+            )}
+          >
             <AlertCircle className="h-5 w-5" />
           </div>
           <div>
             <div className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{title}</div>
-            <p className="text-xs text-zinc-500 font-normal">Protected Lab Financial Invariant</p>
+            <p className="text-xs text-zinc-500 font-normal">
+              {isServerError ? 'Transaction Not Completed (Server Error)' : 'Protected Lab Financial Invariant'}
+            </p>
           </div>
         </div>
       }
@@ -42,7 +55,14 @@ export const RefusalModal: React.FC<RefusalModalProps> = ({
         </button>
       }
     >
-      <div className="rounded-lg bg-zinc-50 dark:bg-zinc-800/50 p-4 border border-zinc-100 dark:border-zinc-800">
+      <div
+        className={cn(
+          'rounded-lg p-4 border',
+          isServerError
+            ? 'bg-rose-50/70 dark:bg-rose-950/30 border-rose-200 dark:border-rose-900/50'
+            : 'bg-zinc-50 dark:bg-zinc-800/50 border-zinc-100 dark:border-zinc-800'
+        )}
+      >
         <p className="text-sm font-medium leading-relaxed text-zinc-800 dark:text-zinc-200">
           {reason}
         </p>

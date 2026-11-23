@@ -44,8 +44,10 @@ export const App: React.FC = () => {
   // Refusal Modal State
   const [refusalState, setRefusalState] = useState<{
     isOpen: boolean;
+    title?: string;
     reason: string;
     remediation?: string;
+    isServerError?: boolean;
   }>({
     isOpen: false,
     reason: '',
@@ -67,11 +69,23 @@ export const App: React.FC = () => {
   };
 
   const handleError = (err: any) => {
-    console.error('Handled refusal:', err);
+    console.error('Handled application error:', err);
+    const status = err?.status;
+    const isServerError = typeof status === 'number' && status >= 500;
+    const title = err?.title || (isServerError ? `Backend Server Error (${status})` : 'Action Refused');
+    const reason = err?.reason || err?.message || 'An unexpected error occurred.';
+    const remediation =
+      err?.remediation ||
+      (isServerError
+        ? 'The backend server failed to complete this transaction. Check backend server logs and try again.'
+        : undefined);
+
     setRefusalState({
       isOpen: true,
-      reason: err?.reason || err?.message || 'An unexpected error occurred.',
-      remediation: err?.remediation,
+      title,
+      reason,
+      remediation,
+      isServerError,
     });
   };
 
@@ -231,8 +245,10 @@ export const App: React.FC = () => {
     <RefusalModal
       isOpen={refusalState.isOpen}
       onClose={() => setRefusalState((prev) => ({ ...prev, isOpen: false }))}
+      title={refusalState.title}
       reason={refusalState.reason}
       remediation={refusalState.remediation}
+      isServerError={refusalState.isServerError}
     />
   </>
   );

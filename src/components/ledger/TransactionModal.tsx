@@ -25,7 +25,7 @@ import {
 import { api } from '../../services/api';
 import { generateIdempotencyKey } from '../../services/backendApi';
 import { EnvelopeBalance, CostCenter, Member, IncomeSource, EntryKind, LedgerEntryView } from '../../lib/db/types';
-import { formatTaka, formatDate } from '../../lib/utils';
+import { formatTaka, formatDate, cn } from '../../lib/utils';
 import { SettleModal } from '../ui/SettleModal';
 import { FeeReceiptModal } from '../dues/FeeReceiptModal';
 
@@ -114,6 +114,14 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   } | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
 
+  // Submission error state
+  const [submitError, setSubmitError] = useState<{
+    title?: string;
+    reason: string;
+    remediation?: string;
+    isServerError?: boolean;
+  } | null>(null);
+
   // Reset or initialize on open
   useEffect(() => {
     if (!isOpen) {
@@ -123,6 +131,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       setIsSubmitting(false);
       setEnvelopeAutoSelectedHint(null);
       setCreatedResult(null);
+      setSubmitError(null);
       setAmount('');
       setNote('');
       setTag('');
@@ -428,6 +437,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const handleConfirmSubmit = async () => {
     if (isSubmitting) return; // Client-side idempotency lock
     setIsSubmitting(true);
+    setSubmitError(null);
 
     try {
       const amt = parseInt(amount, 10);
@@ -539,6 +549,22 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       onTransactionSaved();
       setStep('success');
     } catch (err: any) {
+      const status = err?.status;
+      const isServerError = typeof status === 'number' && status >= 500;
+      const title = err?.title || (isServerError ? `Backend Server Error (${status})` : 'Transaction Refused');
+      const reason = err?.reason || err?.message || 'Server failed to complete the transaction.';
+      const remediation =
+        err?.remediation ||
+        (isServerError
+          ? 'The transaction was NOT recorded. Please check backend server logs and try again.'
+          : undefined);
+
+      setSubmitError({
+        title,
+        reason,
+        remediation,
+        isServerError,
+      });
       onError(err);
     } finally {
       setIsSubmitting(false);
@@ -549,6 +575,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     if (isSubmitting) return; // Prevent dismiss in-flight
     setStep('input');
     setCreatedResult(null);
+    setSubmitError(null);
     clearFormFields();
     onClose();
   };
@@ -556,6 +583,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const handleResetForAnother = () => {
     setStep('input');
     setCreatedResult(null);
+    setSubmitError(null);
     clearFormFields();
   };
 
@@ -1164,6 +1192,46 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
         {/* STEP 2: REVIEW & IMPACT CONFIRMATION SCREEN */}
         {step === 'review' && (
           <div className="space-y-4">
+            {/* Server / Refusal Error Alert Banner */}
+            {submitError && (
+              <div
+                className={cn(
+                  'rounded-xl p-4 border space-y-1.5 animate-in fade-in',
+                  submitError.isServerError
+                    ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-900 dark:text-rose-200'
+                    : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200'
+                )}
+              >
+                <div className="flex items-center gap-2 font-semibold text-xs">
+                  <AlertCircle
+                    className={cn(
+                      'h-4 w-4 shrink-0',
+                      submitError.isServerError
+                        ? 'text-rose-600 dark:text-rose-400'
+                        : 'text-amber-600 dark:text-amber-400'
+                    )}
+                  />
+                  <span>{submitError.title || 'Transaction Failed'}</span>
+                </div>
+                <p className="text-xs leading-relaxed font-mono">
+                  {submitError.reason}
+                </p>
+                {submitError.remediation && (
+                  <div
+                    className={cn(
+                      'text-[11px] pt-1.5 border-t',
+                      submitError.isServerError
+                        ? 'text-rose-700 dark:text-rose-300 border-rose-200/60 dark:border-rose-800/60'
+                        : 'text-amber-700 dark:text-amber-300 border-amber-200/60 dark:border-amber-800/60'
+                    )}
+                  >
+                    <strong className="font-semibold">Remediation: </strong>
+                    {submitError.remediation}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Warning Box on Potential Duplicate */}
             {preflightWarning && (
               <div className="rounded-lg bg-amber-50 dark:bg-amber-950/40 p-3 border border-amber-200 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2">
@@ -1321,7 +1389,10 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
               <button
                 type="button"
                 disabled={isSubmitting}
-                onClick={() => setStep('input')}
+                onClick={() => {
+                  setSubmitError(null);
+                  setStep('input');
+                }}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 px-3.5 py-2 text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-50 cursor-pointer"
               >
                 <ArrowLeft className="h-3.5 w-3.5" />
