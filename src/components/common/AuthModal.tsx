@@ -25,6 +25,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     authenticated: false,
   });
   const [mode, setMode] = useState<'auto' | 'backend' | 'engine'>(authStorage.getMode());
+  const [apiUrl, setApiUrl] = useState(authStorage.getBaseUrl());
+  const [isEditingUrl, setIsEditingUrl] = useState(false);
 
   const checkStatus = async () => {
     try {
@@ -40,6 +42,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       checkStatus();
       setMode(authStorage.getMode());
       setUsername(authStorage.getUsername());
+      setApiUrl(authStorage.getBaseUrl());
       setError(null);
     }
   }, [isOpen]);
@@ -104,18 +107,71 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </span>
             )}
           </div>
-          <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1.5 font-medium text-zinc-600 dark:text-zinc-400">
-              <Globe className="h-4 w-4" /> API Endpoint:
-            </span>
-            <span
-              className="font-mono text-[11px] text-zinc-600 dark:text-zinc-400 truncate max-w-[210px]"
-              title={authStorage.getBaseUrl() || 'Relative path (Vite proxy / same origin)'}
-            >
-              {authStorage.getBaseUrl() || 'Relative (/api)'}
-            </span>
+          <div className="space-y-1.5 pt-1 border-t border-zinc-200/50 dark:border-zinc-800/50">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5 font-medium text-zinc-600 dark:text-zinc-400">
+                <Globe className="h-4 w-4" /> API Endpoint:
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsEditingUrl(!isEditingUrl)}
+                className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+              >
+                {isEditingUrl ? 'Cancel' : 'Configure'}
+              </button>
+            </div>
+            {isEditingUrl ? (
+              <div className="space-y-2 mt-1.5 p-2 rounded-md bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+                <input
+                  type="text"
+                  value={apiUrl}
+                  onChange={(e) => setApiUrl(e.target.value)}
+                  placeholder="http://127.0.0.1:8000 or leave blank for relative proxy"
+                  className="w-full text-xs font-mono px-2.5 py-1.5 rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+                />
+                <div className="flex items-center justify-between gap-1 text-[10px]">
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setApiUrl('http://127.0.0.1:8000')}
+                      className="px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 transition-colors"
+                    >
+                      Port 8000
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setApiUrl('')}
+                      className="px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 transition-colors"
+                    >
+                      Vite Proxy (/api)
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      authStorage.setBaseUrl(apiUrl);
+                      setIsEditingUrl(false);
+                      await checkStatus();
+                      onAuthChange();
+                    }}
+                    className="px-2.5 py-1 rounded bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-semibold hover:opacity-90 transition-opacity"
+                  >
+                    Save & Test
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <span
+                  className="font-mono text-[11px] text-zinc-600 dark:text-zinc-400 truncate max-w-[280px]"
+                  title={authStorage.getBaseUrl() || 'Relative path (Vite proxy / same origin)'}
+                >
+                  {authStorage.getBaseUrl() || 'Relative (/api) → Vite proxy to http://127.0.0.1:8000'}
+                </span>
+              </div>
+            )}
           </div>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between pt-1 border-t border-zinc-200/50 dark:border-zinc-800/50">
             <span className="flex items-center gap-1.5 font-medium text-zinc-600 dark:text-zinc-400">
               <Key className="h-4 w-4" /> Bearer Token:
             </span>

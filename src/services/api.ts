@@ -229,8 +229,7 @@ export const api = {
           checksum: engineResult.checksum,
         };
       } catch (err) {
-        if (authStorage.getMode() === 'backend') throw err;
-        console.warn('Backend closeTenure failed, falling back to engine:', err);
+        throw err;
       }
     }
     return await getEngine().closeTenure(params);
@@ -385,8 +384,7 @@ export const api = {
           active: env.active,
         };
       } catch (err) {
-        if (authStorage.getMode() === 'backend') throw err;
-        console.warn('Backend createEnvelope failed, falling back to engine:', err);
+        throw err;
       }
     }
     return getEngine().createEnvelope(name, target_cap, alloc_priority);
@@ -399,8 +397,7 @@ export const api = {
         getEngine().updateEnvelope(id, { name });
         return res;
       } catch (err) {
-        if (authStorage.getMode() === 'backend') throw err;
-        console.warn('Backend renameEnvelope failed:', err);
+        throw err;
       }
     }
     getEngine().updateEnvelope(id, { name });
@@ -433,8 +430,7 @@ export const api = {
         getEngine().updateEnvelope(id, settings);
         return res;
       } catch (err) {
-        if (authStorage.getMode() === 'backend') throw err;
-        console.warn('Backend updateEnvelopeSettings failed:', err);
+        throw err;
       }
     }
     getEngine().updateEnvelope(id, settings);
@@ -456,8 +452,7 @@ export const api = {
         getEngine().updateEnvelope(id, { active: false });
         return res;
       } catch (err) {
-        if (authStorage.getMode() === 'backend') throw err;
-        console.warn('Backend deactivateEnvelope failed:', err);
+        throw err;
       }
     }
     getEngine().updateEnvelope(id, { active: false });
@@ -523,8 +518,7 @@ export const api = {
           status: res.status,
         };
       } catch (err) {
-        if (authStorage.getMode() === 'backend') throw err;
-        console.warn('Backend createCostCenter failed:', err);
+        throw err;
       }
     }
     return getEngine().createCostCenter(name, kind);
@@ -535,7 +529,7 @@ export const api = {
       try {
         return await backendApi.renameCostCenter(id, name);
       } catch (err) {
-        if (authStorage.getMode() === 'backend') throw err;
+        throw err;
       }
     }
     const ccs = getEngine().getCostCenters();
@@ -551,8 +545,7 @@ export const api = {
         getEngine().updateCostCenterStatus(id, status);
         return;
       } catch (err) {
-        if (authStorage.getMode() === 'backend') throw err;
-        console.warn('Backend updateCostCenterStatus failed:', err);
+        throw err;
       }
     }
     getEngine().updateCostCenterStatus(id, status);
@@ -613,8 +606,7 @@ export const api = {
         (tx as any).serverResult = serverResult;
         return tx;
       } catch (err) {
-        if (authStorage.getMode() === 'backend') throw err;
-        console.warn('Backend sweepLeftover failed, falling back to engine:', err);
+        throw err;
       }
     }
     return getEngine().sweepLeftover(params);
@@ -665,8 +657,7 @@ export const api = {
         getEngine().syncMembers([createdMem]);
         return createdMem;
       } catch (err) {
-        if (authStorage.getMode() === 'backend') throw err;
-        console.warn('Backend createMember failed:', err);
+        throw err;
       }
     }
     return getEngine().createMember(name, startDate, batch, note);
@@ -679,7 +670,7 @@ export const api = {
         getEngine().updateMemberDetails(memberId, data);
         return res;
       } catch (err) {
-        if (authStorage.getMode() === 'backend') throw err;
+        throw err;
       }
     }
     getEngine().updateMemberDetails(memberId, data);
@@ -704,7 +695,7 @@ export const api = {
       try {
         return await backendApi.startMemberPeriod(memberId, startDate);
       } catch (err) {
-        if (authStorage.getMode() === 'backend') throw err;
+        throw err;
       }
     }
     return { id: Date.now(), member_id: memberId, start_date: startDate, end_date: null };
@@ -717,8 +708,7 @@ export const api = {
         getEngine().endMembership(memberId, endDate);
         return;
       } catch (err) {
-        if (authStorage.getMode() === 'backend') throw err;
-        console.warn('Backend endMembership failed:', err);
+        throw err;
       }
     }
     getEngine().endMembership(memberId, endDate);
@@ -810,8 +800,7 @@ export const api = {
           note: res.note,
         };
       } catch (err) {
-        if (authStorage.getMode() === 'backend') throw err;
-        console.warn('Backend addMemberAdjustment failed:', err);
+        throw err;
       }
     }
     return getEngine().addMemberAdjustment(
@@ -862,8 +851,7 @@ export const api = {
           recorded_by: res.recorded_by,
         };
       } catch (err) {
-        if (authStorage.getMode() === 'backend') throw err;
-        console.warn('Backend addFeeRate failed:', err);
+        throw err;
       }
     }
     return getEngine().addFeeRate(effectiveFrom, amount, recordedBy);
@@ -912,8 +900,7 @@ export const api = {
         );
         return res.weeks;
       } catch (err) {
-        if (authStorage.getMode() === 'backend') throw err;
-        console.warn('Backend setShutdownWeeks failed:', err);
+        throw err;
       }
     }
     return getEngine().setShutdown(
@@ -1050,6 +1037,7 @@ export const api = {
     source?: IncomeSource | null;
     member_id?: number | null;
     lines: Array<{ envelope_id: number; amount: number }>;
+    idempotency_key?: string;
   }): Promise<LedgerTransaction & { serverResult?: any }> {
     if (this.isBackendMode() && authStorage.getToken()) {
       let serverResult: any = undefined;
@@ -1079,7 +1067,11 @@ export const api = {
               depositData.envelope_id = line.envelope_id;
             }
           }
-          serverResult = await backendApi.recordDeposit(depositData);
+          const key = params.idempotency_key || (params as any).idempotencyKey;
+          if (key) {
+            depositData.idempotency_key = key;
+          }
+          serverResult = await backendApi.recordDeposit(depositData, key);
         } else if (params.kind === 'expense') {
           const line = params.lines[0];
           serverResult = await backendApi.recordExpense({
@@ -1103,14 +1095,56 @@ export const api = {
             note: params.note || 'Envelope transfer',
           });
         }
-        // Mirror to local engine
-        const tx = getEngine().recordTransaction(params);
-        if (serverResult?.id) tx.id = serverResult.id;
-        (tx as any).serverResult = serverResult;
-        return tx;
+        // Mirror to local engine safely without letting local engine state mismatch mask backend success
+        try {
+          // If envelope missing locally, register it in local engine
+          const lineEnvId = params.lines[0]?.envelope_id;
+          if (lineEnvId && !getEngine().getEnvelopes().some((e) => e.id === lineEnvId)) {
+            const beEnvs = await backendApi.getEnvelopes().catch(() => []);
+            const matchingBeEnv = beEnvs.find((e) => e.id === lineEnvId);
+            if (matchingBeEnv) {
+              (getEngine() as any).state.envelopes.push({
+                id: matchingBeEnv.id,
+                name: matchingBeEnv.name,
+                target_cap: matchingBeEnv.target_cap,
+                alloc_priority: matchingBeEnv.alloc_priority,
+                is_pool: matchingBeEnv.is_pool,
+                active: matchingBeEnv.active,
+              });
+            }
+          }
+          const tx = getEngine().recordTransaction(params);
+          if (serverResult?.id) tx.id = serverResult.id;
+          (tx as any).serverResult = serverResult;
+          return tx;
+        } catch (mirrorErr) {
+          console.debug('Local engine mirror skipped after successful backend commit:', mirrorErr);
+          const synthTx: LedgerTransaction & { serverResult?: any } = {
+            id: serverResult?.id || Date.now(),
+            tenure_id: 1,
+            kind: params.kind,
+            occurred_on: params.occurred_on,
+            recorded_at: new Date().toISOString(),
+            recorded_by: params.recorded_by,
+            note: params.note || '',
+            tag: params.tag || null,
+            cost_center_id: params.cost_center_id || null,
+            source: params.source || null,
+            member_id: params.member_id || null,
+            reverses_id: null,
+            replaces_id: null,
+            serverResult,
+          };
+          (synthTx as any).lines = params.lines.map((l, idx) => ({
+            id: (serverResult?.id || Date.now()) * 1000 + idx + 1,
+            transaction_id: serverResult?.id || 1,
+            envelope_id: l.envelope_id || 1,
+            amount: l.amount,
+          }));
+          return synthTx;
+        }
       } catch (err) {
-        if (authStorage.getMode() === 'backend') throw err;
-        console.warn('Backend recordTransaction failed, falling back:', err);
+        throw err;
       }
     }
     return getEngine().recordTransaction(params);
@@ -1139,23 +1173,44 @@ export const api = {
           note: params.note || '',
         });
         const pool = getEngine().getEnvelopes().find((e) => e.is_pool);
-        const tx = getEngine().recordTransaction({
-          kind: 'expense',
-          occurred_on: params.occurred_on,
-          recorded_by: params.recorded_by || 'Treasurer',
-          note: params.note || `Fee credit refund to member #${params.member_id}`,
-          tag: params.tag || null,
-          cost_center_id: params.cost_center_id || null,
-          source: null,
-          member_id: params.member_id,
-          lines: [{ envelope_id: pool?.id || 1, amount: -Math.abs(params.amount) }],
-        });
-        if (serverResult?.id) tx.id = serverResult.id;
-        (tx as any).serverResult = serverResult;
-        return tx;
+        try {
+          const tx = getEngine().recordTransaction({
+            kind: 'expense',
+            occurred_on: params.occurred_on,
+            recorded_by: params.recorded_by || 'Treasurer',
+            note: params.note || `Fee credit refund to member #${params.member_id}`,
+            tag: params.tag || null,
+            cost_center_id: params.cost_center_id || null,
+            source: null,
+            member_id: params.member_id,
+            lines: [{ envelope_id: pool?.id || 1, amount: -Math.abs(params.amount) }],
+          });
+          if (serverResult?.id) tx.id = serverResult.id;
+          (tx as any).serverResult = serverResult;
+          return tx;
+        } catch (mirrorErr) {
+          console.debug('Local engine mirror skipped for refund:', mirrorErr);
+          const synthTx: LedgerTransaction & { serverResult?: any } = {
+            id: serverResult?.id || Date.now(),
+            tenure_id: 1,
+            kind: 'expense',
+            occurred_on: params.occurred_on,
+            recorded_at: new Date().toISOString(),
+            recorded_by: params.recorded_by || 'Treasurer',
+            note: params.note || `Fee credit refund to member #${params.member_id}`,
+            tag: params.tag || null,
+            cost_center_id: params.cost_center_id || null,
+            source: null,
+            member_id: params.member_id,
+            reverses_id: null,
+            replaces_id: null,
+            serverResult,
+          };
+          (synthTx as any).lines = [{ id: 1, transaction_id: serverResult?.id || 1, envelope_id: pool?.id || 1, amount: -Math.abs(params.amount) }];
+          return synthTx;
+        }
       } catch (err) {
-        if (authStorage.getMode() === 'backend') throw err;
-        console.warn('Backend recordRefund failed:', err);
+        throw err;
       }
     }
     const pool = getEngine().getEnvelopes().find((e) => e.is_pool);
@@ -1203,8 +1258,7 @@ export const api = {
           note,
         });
       } catch (err) {
-        if (authStorage.getMode() === 'backend') throw err;
-        console.warn('Backend fixAmount failed:', err);
+        throw err;
       }
     }
     return getEngine().fixAmount(params);
@@ -1229,8 +1283,7 @@ export const api = {
           source: params.source,
         });
       } catch (err) {
-        if (authStorage.getMode() === 'backend') throw err;
-        console.warn('Backend editLabels failed:', err);
+        throw err;
       }
     }
     getEngine().editTransactionLabel(params);
@@ -1298,8 +1351,7 @@ export const api = {
         });
         return getEngine().allocate(params);
       } catch (err) {
-        if (authStorage.getMode() === 'backend') throw err;
-        console.warn('Backend allocate failed:', err);
+        throw err;
       }
     }
     return getEngine().allocate(params);
@@ -1423,8 +1475,7 @@ export const api = {
           note: out.note,
         };
       } catch (err) {
-        if (authStorage.getMode() === 'backend') throw err;
-        console.warn('Backend createAsset failed, falling back to engine:', err);
+        throw err;
       }
     }
     return getEngine().createAsset(params);
@@ -1448,8 +1499,7 @@ export const api = {
         }
         return out;
       } catch (err) {
-        if (authStorage.getMode() === 'backend') throw err;
-        console.warn('Backend editAsset failed:', err);
+        throw err;
       }
     }
     const asset = getEngine().getAssets().find((a) => a.id === assetId);
@@ -1514,8 +1564,7 @@ export const api = {
           ledger_transaction_id: eventOut.ledger_transaction_id ?? engineEvent.ledger_transaction_id,
         };
       } catch (err) {
-        if (authStorage.getMode() === 'backend') throw err;
-        console.warn('Backend recordAssetEvent failed:', err);
+        throw err;
       }
     }
     return getEngine().recordAssetEvent(params);
@@ -1536,8 +1585,7 @@ export const api = {
           note: params.note,
         });
       } catch (err) {
-        if (authStorage.getMode() === 'backend') throw err;
-        console.warn('Backend fixAssetEvent failed:', err);
+        throw err;
       }
     }
     return { ok: true };
@@ -1652,14 +1700,24 @@ export const api = {
         }
         return rec;
       } catch (err) {
-        if (authStorage.getMode() === 'backend') throw err;
-        console.warn('Backend recordReconciliation failed, falling back to engine:', err);
+        throw err;
       }
     }
     return getEngine().recordReconciliation(params);
   },
 
   async verifyAll(): Promise<string[]> {
+    if (this.isBackendMode() && authStorage.getToken()) {
+      try {
+        return await backendApi.getHealth();
+      } catch (err: any) {
+        if (err.status === 503 && Array.isArray(err.raw)) {
+          return err.raw;
+        }
+        if (authStorage.getMode() === 'backend') throw err;
+        console.warn('Backend getHealth failed, falling back to engine:', err);
+      }
+    }
     return await getEngine().verifyAll();
   },
 

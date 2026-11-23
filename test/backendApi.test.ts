@@ -1,6 +1,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 import { backendApi, authStorage } from '../src/services/backendApi';
+import { api } from '../src/services/api';
 
 // Mock global fetch for testing
 let lastFetch: { url: string; options?: RequestInit } | null = null;
@@ -15,8 +16,11 @@ let mockResponse: { status: number; ok: boolean; body: any } = {
   return {
     status: mockResponse.status,
     ok: mockResponse.ok,
-    json: async () => mockResponse.body,
-    text: async () => JSON.stringify(mockResponse.body),
+    json: async () => {
+      if (typeof mockResponse.body === 'string') throw new Error('Not JSON');
+      return mockResponse.body;
+    },
+    text: async () => (typeof mockResponse.body === 'string' ? mockResponse.body : JSON.stringify(mockResponse.body)),
   };
 };
 
@@ -140,6 +144,33 @@ describe('Backend API Client Contract Tests', () => {
         return true;
       }
     );
+
+    // Idempotency conflict error translation
+    mockResponse = {
+      status: 409,
+      ok: false,
+      body: {
+        title: 'Idempotency Conflict',
+        status: 409,
+        detail: 'This idempotency key was previously claimed with a different request.',
+      },
+    };
+
+    await assert.rejects(
+      async () => {
+        await backendApi.recordDeposit({
+          amount: 500,
+          occurred_on: '2026-10-26',
+          source: 'other',
+          envelope_id: 1,
+        });
+      },
+      (err: any) => {
+        assert.strictEqual(err.status, 409);
+        assert(err.remediation.includes('Idempotency-Key was previously submitted'));
+        return true;
+      }
+    );
   });
 
   it('formats query params for cost centers correctly', async () => {
@@ -227,6 +258,41 @@ describe('Backend API Client Contract Tests', () => {
     assert.strictEqual(grantBody.source, 'admin_grant');
     assert.strictEqual(grantBody.envelope_id, 2);
     assert.strictEqual(grantBody.member_id, undefined);
+
+    // Verify Idempotency-Key header is automatically generated and attached
+    const headers = lastFetch?.options?.headers as Record<string, string>;
+    assert(headers?.['Idempotency-Key']);
+    assert.strictEqual(typeof headers?.['Idempotency-Key'], 'string');
+    assert(headers?.['Idempotency-Key'].length > 0);
+
+    // Custom Idempotency-Key is respected
+    await backendApi.recordDeposit(
+      {
+        amount: 50,
+        occurred_on: '2026-10-28',
+        source: 'weekly_fee',
+        member_id: 7,
+      },
+      'custom-idempotency-key-uuid-123'
+    );
+    const customHeaders = lastFetch?.options?.headers as Record<string, string>;
+    assert.strictEqual(customHeaders?.['Idempotency-Key'], 'custom-idempotency-key-uuid-123');
+
+    // Blank Idempotency-Key is rejected
+    await assert.rejects(
+      async () => {
+        await backendApi.recordDeposit(
+          {
+            amount: 50,
+            occurred_on: '2026-10-28',
+            source: 'weekly_fee',
+            member_id: 7,
+          },
+          '   '
+        );
+      },
+      /Idempotency-Key header must not be blank/
+    );
 
     // Non-weekly fee with member_id: rejected
     await assert.rejects(
@@ -463,5 +529,133 @@ describe('Backend API Client Contract Tests', () => {
     assert.strictEqual(lines[2].transaction_id, 43);
     assert.strictEqual(lines[2].envelope_id, 2);
     assert.strictEqual(lines[2].amount, 2000);
+  });
+
+  it('translates 500 server error into Backend Server Error (500) with clear reason and remediation', async () => {
+    mockResponse = {
+      status: 500,
+      ok: false,
+      body: { detail: 'Database deadlock while committing transaction ledger line.' },
+    };
+
+    await assert.rejects(
+      async () => {
+        await backendApi.recordExpense({
+          amount: 250,
+          envelope_id: 1,
+          occurred_on: '2026-10-26',
+        });
+      },
+      (err: any) => {
+        assert.strictEqual(err.status, 500);
+        assert.strictEqual(err.title, 'Backend Server Error (500)');
+        assert(err.reason.includes('Database deadlock while committing'));
+        assert(err.remediation.includes('The transaction was NOT completed on the server'));
+        return true;
+      }
+    );
+  });
+
+  it('filters raw HTML error pages on 500 status without leaking HTML markup to reason', async () => {
+    mockResponse = {
+      status: 502,
+      ok: false,
+      body: '<html><body>502 Bad Gateway - upstream server failed to respond</body></html>',
+    };
+
+    await assert.rejects(
+      async () => {
+        await backendApi.recordDeposit({
+          amount: 500,
+          envelope_id: 1,
+          occurred_on: '2026-10-26',
+          source: 'other',
+        });
+      },
+      (err: any) => {
+        assert.strictEqual(err.status, 502);
+        assert.strictEqual(err.title, 'Backend Server Error (502)');
+        assert(!err.reason.includes('<html'));
+        assert(err.reason.includes('Internal server error occurred'));
+        return true;
+      }
+    );
+  });
+
+  it('translates 400 bad request error into structured ApiRefusalError', async () => {
+    mockResponse = {
+      status: 400,
+      ok: false,
+      body: { detail: 'Member is not eligible for dues collection in this week.' },
+    };
+
+    await assert.rejects(
+      async () => {
+        await backendApi.recordDeposit({
+          amount: 50,
+          member_id: 99,
+          occurred_on: '2026-10-26',
+          source: 'weekly_fee',
+        });
+      },
+      (err: any) => {
+        assert.strictEqual(err.status, 400);
+        assert.strictEqual(err.title, 'Invalid Request (400)');
+        assert(err.reason.includes('Member is not eligible'));
+        assert(err.remediation.includes('verify the transaction details'));
+        return true;
+      }
+    );
+  });
+
+  it('api.recordTransaction rethrows backend server error instead of falling back to local engine', async () => {
+    authStorage.setToken('valid-auth-token-123');
+    mockResponse = {
+      status: 500,
+      ok: false,
+      body: { detail: 'Internal Server Error: database connection refused' },
+    };
+
+    await assert.rejects(
+      async () => {
+        await api.recordTransaction({
+          kind: 'deposit',
+          occurred_on: '2026-10-26',
+          recorded_by: 'Treasurer',
+          source: 'admin_grant',
+          lines: [{ envelope_id: 1, amount: 1000 }],
+        });
+      },
+      (err: any) => {
+        assert.strictEqual(err.status, 500);
+        assert.strictEqual(err.title, 'Backend Server Error (500)');
+        assert(err.reason.includes('database connection refused'));
+        return true;
+      }
+    );
+  });
+
+  it('api.recordRefund rethrows backend server error instead of faking success', async () => {
+    authStorage.setToken('valid-auth-token-123');
+    mockResponse = {
+      status: 500,
+      ok: false,
+      body: { detail: 'PostgreSQL error: table ledger_transactions is locked' },
+    };
+
+    await assert.rejects(
+      async () => {
+        await api.recordRefund({
+          amount: 200,
+          occurred_on: '2026-10-26',
+          member_id: 1,
+        });
+      },
+      (err: any) => {
+        assert.strictEqual(err.status, 500);
+        assert(err.reason.includes('table ledger_transactions is locked'));
+        return true;
+      }
+    );
   });
 });
